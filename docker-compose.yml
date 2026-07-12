@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: assetflow-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      # Initiates the replica set on first healthy check (idempotent) and reports status.
+      test: >
+        mongosh --quiet --eval '
+          try { rs.status().ok }
+          catch (e) {
+            rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }).ok
+          }
+        '
+      interval: 5s
+      timeout: 30s
+      retries: 20
+      start_period: 5s
+
+  app:
+    build: .
+    container_name: assetflow-app
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "mongodb://mongo:27017/assetflow?replicaSet=rs0&directConnection=true"
+      JWT_ACCESS_SECRET: "docker-access-secret-min-32-chars-long-please"
+      JWT_REFRESH_SECRET: "docker-refresh-secret-min-32-chars-long-please"
+      COOKIE_DOMAIN: "localhost"
+      CORS_ORIGIN: "http://localhost:3000"
+      NODE_ENV: "production"
+      CRON_SECRET: "docker-cron-secret"
+    ports:
+      - "3000:3000"
+    # On boot: push schema, seed, then start. Kept simple for one-command spin-up.
+    command: sh -c "npx prisma db push && npm run seed && npm run start"
+
+volumes:
+  mongo_data:

@@ -1,0 +1,344 @@
+openapi: 3.1.0
+info:
+  title: AssetFlow API
+  version: 1.0.0
+  description: >
+    Production-grade REST API for AssetFlow, an enterprise asset/resource
+    management system. Every response uses a consistent success/error envelope.
+    Auth is via httpOnly JWT cookies (access + rotating refresh).
+servers:
+  - url: http://localhost:3000
+    description: Local dev
+tags:
+  - name: Auth
+  - name: Assets
+  - name: Allocations
+  - name: Bookings
+  - name: Maintenance
+  - name: Audits
+  - name: Organization
+  - name: Activity
+  - name: Notifications
+  - name: Analytics
+
+components:
+  securitySchemes:
+    accessCookie:
+      type: apiKey
+      in: cookie
+      name: af_access
+  parameters:
+    page: { name: page, in: query, schema: { type: integer, default: 1 } }
+    limit: { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+    sortBy: { name: sortBy, in: query, schema: { type: string } }
+    sortOrder: { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc] } }
+    search: { name: search, in: query, schema: { type: string } }
+  schemas:
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, enum: [false] }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+    Success:
+      type: object
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: {}
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    Asset:
+      type: object
+      properties:
+        id: { type: string }
+        tag: { type: string, example: "AF-0001" }
+        name: { type: string }
+        category: { type: string }
+        serialNumber: { type: string }
+        acquisitionDate: { type: string, format: date }
+        acquisitionCost: { type: number }
+        condition: { type: string, enum: [Excellent, Good, Fair, Poor] }
+        location: { type: string }
+        status: { type: string, enum: [Available, Allocated, Reserved, "Under Maintenance", Lost, Retired, Disposed] }
+        shared: { type: boolean }
+        bookable: { type: boolean }
+    CreateAsset:
+      type: object
+      required: [name, categoryId, serialNumber, acquisitionDate, acquisitionCost, location]
+      properties:
+        name: { type: string }
+        categoryId: { type: string }
+        serialNumber: { type: string }
+        acquisitionDate: { type: string, format: date }
+        acquisitionCost: { type: number }
+        condition: { type: string, enum: [EXCELLENT, GOOD, FAIR, POOR] }
+        location: { type: string }
+        shared: { type: boolean }
+        bookable: { type: boolean }
+        customFieldValues: { type: object, additionalProperties: true }
+
+security:
+  - accessCookie: []
+
+paths:
+  /api/health:
+    get:
+      tags: [Auth]
+      security: []
+      summary: Liveness probe
+      responses: { "200": { description: OK } }
+
+  /api/auth/signup:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register a new user (role EMPLOYEE). Sets auth cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                name: { type: string }
+                firstName: { type: string }
+                lastName: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                department: { type: string }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Success" } } } }
+        "409": { description: Email exists, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Log in. Sets httpOnly access + refresh cookies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Invalid credentials }
+        "429": { description: Rate limited }
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Rotate refresh token (reuse detection revokes the session).
+      responses: { "200": { description: OK }, "401": { description: Invalid/expired } }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Clear cookies and invalidate the stored refresh token.
+      responses: { "200": { description: OK } }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user profile.
+      responses: { "200": { description: OK }, "401": { description: Unauthenticated } }
+
+  /api/assets:
+    get:
+      tags: [Assets]
+      summary: List assets (filter by status/category/location, search, paginate).
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/search"
+        - { name: status, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: location, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Assets]
+      summary: Register an asset (manager/admin). Tag auto-generated server-side.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CreateAsset" } } }
+      responses:
+        "201": { description: Created }
+        "403": { description: Forbidden }
+        "409": { description: Duplicate serial number }
+
+  /api/assets/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Assets]
+      summary: Asset detail + derived allocation & maintenance history.
+      responses: { "200": { description: OK }, "404": { description: Not found } }
+    patch:
+      tags: [Assets]
+      summary: Update asset (manager/admin).
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Assets]
+      summary: Soft-delete asset (manager/admin).
+      responses: { "200": { description: OK } }
+
+  /api/assets/{id}/allocate:
+    post:
+      tags: [Assets]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      summary: Shortcut to create a pending allocation for this asset.
+      responses: { "201": { description: Created }, "409": { description: Asset unavailable } }
+
+  /api/allocations:
+    get:
+      tags: [Allocations]
+      summary: List allocations (status filter incl. OVERDUE).
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/limit"
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, ACTIVE, OVERDUE, RETURNED, REJECTED] } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Allocations]
+      summary: Create allocation request (server-side conflict check -> 409).
+      responses: { "201": { description: Created }, "409": { description: Asset already allocated } }
+
+  /api/allocations/{id}/approve:
+    patch:
+      tags: [Allocations]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      summary: Approve (manager/admin). Transactional; flips asset to ALLOCATED.
+      responses: { "200": { description: OK }, "409": { description: Conflict } }
+  /api/allocations/{id}/return:
+    patch:
+      tags: [Allocations]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      summary: Return (manager/admin). Transactional; flips asset to AVAILABLE.
+      responses: { "200": { description: OK } }
+  /api/allocations/{id}/reject:
+    patch:
+      tags: [Allocations]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      summary: Reject a pending allocation (manager/admin).
+      responses: { "200": { description: OK } }
+
+  /api/bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings (view=Today/Week/Month -> server-side range).
+      parameters:
+        - { name: view, in: query, schema: { type: string, enum: [Today, Week, Month] } }
+        - { name: status, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Bookings]
+      summary: Create booking. Server-side overlap detection (409 on conflict).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assetId, purpose, date, startTime, endTime]
+              properties:
+                assetId: { type: string }
+                purpose: { type: string }
+                date: { type: string, format: date }
+                startTime: { type: string, example: "10:00" }
+                endTime: { type: string, example: "11:00" }
+      responses: { "201": { description: Created }, "409": { description: Double-booked } }
+  /api/bookings/{id}/cancel:
+    patch:
+      tags: [Bookings]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /api/maintenance:
+    get:
+      tags: [Maintenance]
+      summary: Active maintenance requests.
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Maintenance]
+      summary: Raise a request (any authenticated user).
+      responses: { "201": { description: Created } }
+  /api/maintenance/history:
+    get: { tags: [Maintenance], summary: Resolved requests (derived), responses: { "200": { description: OK } } }
+  /api/maintenance/{id}/approve:
+    patch: { tags: [Maintenance], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: "OPEN -> APPROVED (asset UNDER_MAINTENANCE)", responses: { "200": { description: OK }, "409": { description: Illegal transition } } }
+  /api/maintenance/{id}/reject:
+    patch: { tags: [Maintenance], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/maintenance/{id}/assign-technician:
+    patch: { tags: [Maintenance], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/maintenance/{id}/start:
+    patch: { tags: [Maintenance], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/maintenance/{id}/resolve:
+    patch: { tags: [Maintenance], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: "IN_PROGRESS -> RESOLVED (asset back to AVAILABLE)", responses: { "200": { description: OK } } }
+
+  /api/audits/cycles:
+    get: { tags: [Audits], summary: List audit cycles with computed stats, responses: { "200": { description: OK } } }
+    post: { tags: [Audits], summary: "Create cycle (manager/admin); seeds AuditAsset rows", responses: { "201": { description: Created } } }
+  /api/audits/cycles/{id}:
+    get: { tags: [Audits], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: Cycle detail with computed compliance stats, responses: { "200": { description: OK } } }
+  /api/audits/cycles/{id}/close:
+    patch: { tags: [Audits], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: "Close cycle; blocked if pending unless force=true", responses: { "200": { description: OK }, "409": { description: Pending items } } }
+  /api/audits/cycles/{id}/discrepancies:
+    get: { tags: [Audits], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: Derived MISSING/DAMAGED view, responses: { "200": { description: OK } } }
+  /api/audits/cycles/{id}/assets/{auditAssetId}:
+    patch: { tags: [Audits], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: auditAssetId, in: path, required: true, schema: { type: string } }], summary: Mark asset verified/missing/damaged, responses: { "200": { description: OK } } }
+
+  /api/departments:
+    get: { tags: [Organization], summary: List departments with computed staffCount, responses: { "200": { description: OK } } }
+    post: { tags: [Organization], summary: Create department (admin), responses: { "201": { description: Created } } }
+  /api/departments/{id}:
+    patch: { tags: [Organization], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+    delete: { tags: [Organization], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK }, "409": { description: Has members } } }
+  /api/categories:
+    get: { tags: [Organization], responses: { "200": { description: OK } } }
+    post: { tags: [Organization], summary: Create category with custom fields (admin), responses: { "201": { description: Created } } }
+  /api/categories/{id}:
+    patch: { tags: [Organization], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+    delete: { tags: [Organization], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/employees:
+    get: { tags: [Organization], summary: List users (role/department filter), responses: { "200": { description: OK } } }
+  /api/employees/{id}/promote:
+    patch: { tags: [Organization], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], summary: Promote EMPLOYEE -> MANAGER (admin), responses: { "200": { description: OK } } }
+
+  /api/activity:
+    get: { tags: [Activity], summary: "Activity log (manager: own dept, admin: all)", responses: { "200": { description: OK }, "403": { description: Forbidden } } }
+
+  /api/notifications:
+    get: { tags: [Notifications], summary: Current user's notifications + unread count header, responses: { "200": { description: OK } } }
+  /api/notifications/read-all:
+    patch: { tags: [Notifications], responses: { "200": { description: OK } } }
+  /api/notifications/{id}/read:
+    patch: { tags: [Notifications], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/notifications/{id}:
+    delete: { tags: [Notifications], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+
+  /api/dashboard:
+    get: { tags: [Analytics], summary: Dashboard KPIs (aggregation-driven, TTL-cached), responses: { "200": { description: OK } } }
+  /api/reports:
+    get:
+      tags: [Analytics]
+      summary: Reports (utilization trend, dept allocation, idle count, cost).
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: ["7", "30"] } }
+        - { name: idleDays, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
