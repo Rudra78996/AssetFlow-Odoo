@@ -25,7 +25,7 @@ const config: Config = {
         primary: "#2563EB",
         "on-primary": "#FFFFFF",
         "primary-container": "#2563EB",
-        "on-primary-container": "#EEEFFF",
+        "on-primary-container": "#1E3A8A",
         "primary-fixed": "#DBE1FF",
         "primary-fixed-dim": "#B4C5FF",
         // Secondary
@@ -37,7 +37,7 @@ const config: Config = {
         tertiary: "#943700",
         "on-tertiary": "#FFFFFF",
         "tertiary-container": "#BC4800",
-        "on-tertiary-container": "#FFEDE6",
+        "on-tertiary-container": "#7A2E00",
         // Error
         error: "#BA1A1A",
         "on-error": "#FFFFFF",

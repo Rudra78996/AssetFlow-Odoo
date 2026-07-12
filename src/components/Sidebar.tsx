@@ -5,7 +5,6 @@ import { useApp } from "@/contexts/AppContext";
 import {
   LayoutDashboard,
   Settings2,
-  Boxes,
   ClipboardCheck,
   CalendarCheck,
   Wrench,
@@ -28,7 +27,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: "Org Setup", href: "/organization-setup", icon: <Settings2 className="w-5 h-5" />, roles: ["admin"] },
-  { label: "Directory", href: "/assets", icon: <Boxes className="w-5 h-5" /> },
+  { label: "Directory", href: "/assets", icon: <Package2 className="w-5 h-5" /> },
   { label: "Allocations", href: "/allocations", icon: <ClipboardCheck className="w-5 h-5" /> },
   { label: "Bookings", href: "/bookings", icon: <CalendarCheck className="w-5 h-5" /> },
   { label: "Maintenance", href: "/maintenance", icon: <Wrench className="w-5 h-5" /> },

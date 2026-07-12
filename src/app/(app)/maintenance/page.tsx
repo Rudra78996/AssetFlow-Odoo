@@ -21,42 +21,35 @@ const priorityColors: Record<string, string> = {
 };
 
 const statusSteps: Record<string, Step[]> = {
-  Clock: [
-    { label: "Clock", status: "current", detail: "Awaiting review" },
+  Open: [
+    { label: "Open", status: "current", detail: "Awaiting review" },
     { label: "Approved", status: "upcoming" },
     { label: "Technician Assigned", status: "upcoming" },
     { label: "In Progress", status: "upcoming" },
     { label: "Resolved", status: "upcoming" },
   ],
   Approved: [
-    { label: "Clock", status: "completed" },
+    { label: "Open", status: "completed" },
     { label: "Approved", status: "current", detail: "Approved" },
     { label: "Technician Assigned", status: "upcoming" },
     { label: "In Progress", status: "upcoming" },
     { label: "Resolved", status: "upcoming" },
   ],
   "Technician Assigned": [
-    { label: "Clock", status: "completed" },
+    { label: "Open", status: "completed" },
     { label: "Approved", status: "completed" },
     { label: "Technician Assigned", status: "current", detail: "In progress" },
     { label: "In Progress", status: "upcoming" },
     { label: "Resolved", status: "upcoming" },
   ],
   Resolved: [
-    { label: "Clock", status: "completed" },
+    { label: "Open", status: "completed" },
     { label: "Approved", status: "completed" },
     { label: "Technician Assigned", status: "completed" },
     { label: "In Progress", status: "completed" },
     { label: "Resolved", status: "completed", detail: "Completed" },
   ],
 };
-
-const workflowColumns = [
-  { status: "Clock", label: "Clock", count: "12", color: "bg-surface-variant text-on-surface-variant" },
-  { status: "Approved", label: "Approved", count: "05", color: "bg-surface-variant text-on-surface-variant" },
-  { status: "Technician Assigned", label: "Technician Assigned", count: "08", color: "bg-surface-variant text-on-surface-variant" },
-  { status: "Resolved", label: "Resolved", count: "42", color: "bg-surface-variant text-on-surface-variant" },
-];
 
 export default function MaintenancePage() {
   const { addToast } = useApp();
@@ -65,8 +58,16 @@ export default function MaintenancePage() {
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [form, setForm] = useState({ asset: "", priority: "Medium" as MaintenancePriority, issue: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const workflowColumns = [
+    { status: "Open", label: "Open", count: requestList.filter((r: any) => r.status === "Open").length, color: "bg-surface-variant text-on-surface-variant" },
+    { status: "Approved", label: "Approved", count: requestList.filter((r: any) => r.status === "Approved").length, color: "bg-surface-variant text-on-surface-variant" },
+    { status: "Technician Assigned", label: "Technician Assigned", count: requestList.filter((r: any) => r.status === "Technician Assigned").length, color: "bg-surface-variant text-on-surface-variant" },
+    { status: "Resolved", label: "Resolved", count: requestList.filter((r: any) => r.status === "Resolved").length, color: "bg-surface-variant text-on-surface-variant" },
+  ];
 
   useEffect(() => {
     const init = async () => {
@@ -93,6 +94,9 @@ export default function MaintenancePage() {
         console.error(err);
       } finally {
         setLoading(false);
+        if (requestList.length > 0 && !selectedRequest) {
+          setSelectedRequest(requestList[0]);
+        }
       }
     };
     init();
@@ -206,8 +210,19 @@ export default function MaintenancePage() {
                   <span className={cn("px-2 text-xs font-bold rounded", col.color)}>{col.count}</span>
                 </div>
                 <div className="space-y-3">
-                  {items.length > 0 ? items.map((req) => (
-                    <div key={req.id} className="p-3 rounded-lg border border-outline-variant hover:border-primary/20 transition-colors">
+                  {loading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <div key={`skeleton-${i}`} className="p-3 rounded-lg border border-outline-variant/30 animate-pulse">
+                        <div className="h-4 bg-surface-container-high rounded w-1/2 mb-2" />
+                        <div className="h-3 bg-surface-container-high rounded w-3/4 mb-2" />
+                        <div className="flex justify-between">
+                          <div className="h-5 bg-surface-container-high rounded w-1/4" />
+                          <div className="h-3 bg-surface-container-high rounded w-1/5" />
+                        </div>
+                      </div>
+                    ))
+                  ) : items.length > 0 ? items.map((req) => (
+                    <div key={req.id} onClick={() => setSelectedRequest(req)} className="p-3 rounded-lg border border-outline-variant hover:border-primary/20 transition-colors cursor-pointer">
                       <div className="flex items-start justify-between mb-1">
                         <p className="font-label-md font-bold text-on-surface">{req.assetName}</p>
                         {req.priority === "High" && <AlertTriangle className="w-4 h-4 text-error" />}
@@ -219,8 +234,8 @@ export default function MaintenancePage() {
                         </span>
                         <span className="text-[10px] text-outline">{req.date}</span>
                       </div>
-                      {req.status === "Clock" && (
-                        <div className="flex gap-2 mt-3">
+                      {req.status === "Open" && (
+                        <div className="flex gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
                           <button className="flex-1 py-1.5 bg-primary text-white rounded-md text-xs hover:bg-primary/90" onClick={() => handleApprove(req.id)}>Approve</button>
                           <button className="flex-1 py-1.5 border border-outline-variant rounded-md text-xs hover:bg-surface-container-low" onClick={() => handleReject(req.id)}>Reject</button>
                         </div>
@@ -240,12 +255,12 @@ export default function MaintenancePage() {
       </div>
 
       {/* Transfer Stepper for selected request */}
-      {requestList[0] && (
+      {selectedRequest && (
         <div className="card p-6">
           <h3 className="font-headline-md text-headline-md mb-6">
-            Workflow: {requestList[0].assetName}
+            Workflow: {selectedRequest.assetName}
           </h3>
-          <Stepper steps={statusSteps[requestList[0].status] || statusSteps["Clock"]} />
+          <Stepper steps={statusSteps[selectedRequest.status] || statusSteps["Open"]} />
         </div>
       )}
 
@@ -271,7 +286,17 @@ export default function MaintenancePage() {
               </tr>
             </thead>
             <tbody>
-              {historyList.map((h) => (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-b border-outline-variant/30 animate-pulse">
+                    <td className="px-4 py-4"><div className="h-4 bg-surface-container-high rounded w-1/3" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-surface-container-high rounded w-1/2" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-surface-container-high rounded w-1/3" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-surface-container-high rounded w-1/4" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-surface-container-high rounded w-1/5" /></td>
+                  </tr>
+                ))
+              ) : historyList.map((h) => (
                 <tr key={h.id} className="border-b border-outline-variant/30 hover:bg-surface-container-low/50">
                   <td className="px-4 py-4 font-mono text-body-md">{h.assetTag}</td>
                   <td className="px-4 py-3 text-body-md">{h.issue}</td>

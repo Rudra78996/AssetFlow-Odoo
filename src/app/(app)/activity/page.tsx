@@ -145,7 +145,17 @@ export default function ActivityPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map((log) => (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-b border-outline-variant/30 animate-pulse">
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-2/3" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/2" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/3" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/2" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/4" /></td>
+                  </tr>
+                ))
+              ) : filteredLogs.map((log) => (
                 <tr key={log.id} className="border-b border-outline-variant/50 hover:bg-surface-container-low">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">

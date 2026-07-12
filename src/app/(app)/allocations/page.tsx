@@ -258,7 +258,17 @@ export default function AllocationsPage() {
               </tr>
             </thead>
             <tbody>
-              {allocList.map((alloc) => (
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`skeleton-${i}`} className="border-b border-outline-variant/30 animate-pulse">
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/3" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/2" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/4" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/3" /></td>
+                    <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/4" /></td>
+                  </tr>
+                ))
+              ) : allocList.map((alloc) => (
                 <tr key={alloc.id} className="border-b border-outline-variant/50 hover:bg-surface-container-low">
                   <td className="px-6 py-4 font-mono text-body-md">{alloc.assetName.substring(0, 8)}</td>
                   <td className="px-6 py-4">

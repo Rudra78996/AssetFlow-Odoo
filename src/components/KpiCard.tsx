@@ -16,7 +16,7 @@ export function KpiCard({ label, value, icon, trend, trendDirection, color = "te
   return (
     <div className={cn("card card-hover p-5 flex flex-col gap-3", className)}>
       <div className="flex items-center justify-between">
-        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center bg-primary/5", color)}>
+        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", color.replace("text-", "bg-").replace(/text-([a-z]+)-([0-9]+)/, "bg-$1/5"))}>
           {icon}
         </div>
         {trend && (

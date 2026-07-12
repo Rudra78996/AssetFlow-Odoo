@@ -331,7 +331,15 @@ export default function AuditsPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredAssets.map((asset) => (
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`skeleton-${i}`} className="border-b border-outline-variant/30 animate-pulse">
+                  <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/2 mb-1" /><div className="h-3 bg-surface-container-high rounded w-1/3" /></td>
+                  <td className="px-6 py-4"><div className="h-4 bg-surface-container-high rounded w-1/3 mb-1" /><div className="h-3 bg-surface-container-high rounded w-1/4" /></td>
+                  <td className="px-6 py-4"><div className="h-8 bg-surface-container-high rounded w-1/2" /></td>
+                </tr>
+              ))
+            ) : filteredAssets.map((asset) => (
               <tr key={asset.id} className={cn("border-b border-outline-variant/50 hover:bg-surface-container-low", asset.status !== "pending" && "opacity-75")}>
                 <td className="px-6 py-4">
                   <p className="font-label-md text-label-md text-on-surface">{asset.name}</p>

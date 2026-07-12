@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useApp } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
 import {
-  Gauge, Timer, DollarSign, ListChecks, TrendingUp,
+  Gauge, Timer, DollarSign, ListChecks, TrendingUp, TrendingDown,
   Download, CalendarDays, FileText, Image as ImageIcon,
   MoreVertical, Filter,
 } from "lucide-react";
@@ -34,10 +34,9 @@ export default function ReportsPage() {
         if (res.ok && data.success) {
           const summary = data.data;
           setKpiList([
-            { label: "Utilization Rate", value: `${summary.kpis.averageUtilization}%`, icon: "speed", trend: "+3.2%", color: "text-available" },
-            { label: "Idle Assets", value: `${summary.kpis.idleAssetCount} Units`, icon: "hourglass_empty", trend: "-5.0%", color: "text-available" },
-            { label: "Operational Cost", value: `$${summary.kpis.operationalCost.toLocaleString()}`, icon: "payments", trend: "+12.4%", color: "text-error" },
-            { label: "Compliance Score", value: "98.8%", icon: "fact_check", trend: "+0.4%", color: "text-available" },
+            { label: "Utilization Rate", value: `${summary.kpis.averageUtilization}%`, icon: "speed", trend: "+3.2%", trendDirection: "up", color: "text-available" },
+            { label: "Idle Assets", value: `${summary.kpis.idleAssetCount} Units`, icon: "hourglass_empty", trend: "-5.0%", trendDirection: "down", color: "text-available" },
+            { label: "Operational Cost", value: `$${summary.kpis.operationalCost.toLocaleString()}`, icon: "payments", trend: "+12.4%", trendDirection: "up", color: "text-error" },
           ]);
           setTrendList(summary.utilizationTrend || []);
           setDeptList(summary.deptAllocation || []);
@@ -115,15 +114,26 @@ export default function ReportsPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiList.map((kpi) => (
+        {loading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={`skeleton-${i}`} className="card p-5 animate-pulse">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-lg bg-surface-container-high" />
+                <div className="h-5 bg-surface-container-high rounded w-16" />
+              </div>
+              <div className="h-3 bg-surface-container-high rounded w-1/2 mb-2" />
+              <div className="h-8 bg-surface-container-high rounded w-2/3" />
+            </div>
+          ))
+        ) : kpiList.map((kpi) => (
           <div key={kpi.label} className="card p-5">
             <div className="flex items-center justify-between mb-3">
-              <div className="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface-variant">
+              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", kpi.color.replace("text-", "bg-").replace(/text-([a-z]+)-([0-9]+)/, "bg-$1/5"))}>
                 {kpiIcons[kpi.icon]}
               </div>
               {kpi.trend && (
-                <span className={cn("font-label-md text-label-md flex items-center gap-0.5", kpi.color)}>
-                  <TrendingUp className="w-3.5 h-3.5" /> {kpi.trend}
+                <span className={cn("font-label-md text-label-md flex items-center gap-0.5", kpi.trendDirection === "up" ? "text-available" : "text-error")}>
+                  {kpi.trendDirection === "up" ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />} {kpi.trend}
                 </span>
               )}
             </div>
@@ -152,7 +162,14 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="flex items-end justify-between gap-2 h-48 pt-4">
-            {trendList.map((d, idx) => {
+            {loading ? (
+              Array.from({ length: 7 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="flex-1 flex flex-col items-center gap-2 animate-pulse">
+                  <div className="w-full h-full bg-surface-container-high rounded-t-md" />
+                  <div className="h-3 bg-surface-container-high rounded w-8" />
+                </div>
+              ))
+            ) : trendList.map((d, idx) => {
               const maxVal = Math.max(...trendList.map(t => t.value)) || 1;
               const heightPct = Math.min(100, Math.round((d.value / maxVal) * 100));
               return (
@@ -181,7 +198,19 @@ export default function ReportsPage() {
             <button className="text-outline hover:text-on-surface"><MoreVertical className="w-5 h-5" /></button>
           </div>
           <div className="space-y-4">
-            {statusList.map((s) => {
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="animate-pulse">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="h-4 bg-surface-container-high rounded w-1/3" />
+                    <div className="h-4 bg-surface-container-high rounded w-8" />
+                  </div>
+                  <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
+                    <div className="h-full bg-surface-container-high rounded-full" style={{ width: `${50 + i * 10}%` }} />
+                  </div>
+                </div>
+              ))
+            ) : statusList.map((s) => {
               const statusColorMap: Record<string, string> = {
                 "Available": "text-available",
                 "Allocated": "text-primary",
@@ -222,7 +251,19 @@ export default function ReportsPage() {
             </button>
           </div>
           <div className="space-y-4">
-            {deptList.map((d) => {
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="animate-pulse">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="h-4 bg-surface-container-high rounded w-1/3" />
+                    <div className="h-4 bg-surface-container-high rounded w-12" />
+                  </div>
+                  <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
+                    <div className="h-full bg-surface-container-high rounded-full" style={{ width: `${40 + i * 10}%` }} />
+                  </div>
+                </div>
+              ))
+            ) : deptList.map((d) => {
               const maxUnits = Math.max(...deptList.map(item => item.units)) || 1;
               return (
                 <div key={d.dept}>
@@ -246,6 +287,7 @@ export default function ReportsPage() {
               <h4 className="font-headline-md text-headline-md text-on-surface">Booking Peak Windows</h4>
               <p className="text-outline font-label-md text-label-md">24-hour demand heat signature</p>
             </div>
+            <span className="text-[10px] bg-surface-container-low text-outline px-2 py-1 rounded">Sample data</span>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[400px]">
@@ -317,8 +359,8 @@ export default function ReportsPage() {
           </tbody>
         </table>
         <div className="flex items-center justify-between p-4 border-t border-outline-variant">
-          <p className="text-[12px] text-outline font-label-md">Showing 4 of 285 assets</p>
-          <div className="flex items-center gap-2">
+          <p className="text-[12px] text-outline font-label-md">Performance audit data available via API endpoint</p>
+          <div className="flex items-center gap-2 opacity-50 pointer-events-none">
             <button className="p-1.5 rounded hover:bg-surface-container">‹</button>
             <button className="p-1.5 rounded hover:bg-surface-container">›</button>
           </div>

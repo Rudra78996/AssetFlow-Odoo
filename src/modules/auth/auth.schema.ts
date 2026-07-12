@@ -10,7 +10,6 @@ export const signupSchema = z
     email: z.string().email(),
     password: z.string().min(8, "Password must be at least 8 characters"),
     department: z.string().trim().optional(),
-    role: z.enum(["EMPLOYEE", "MANAGER", "ADMIN"]).optional(),
   })
   .refine((v) => v.name || (v.firstName && v.lastName), {
     message: "Provide either `name` or both `firstName` and `lastName`",
@@ -21,6 +20,5 @@ export type SignupInput = z.infer<typeof signupSchema>;
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  role: z.enum(["EMPLOYEE", "MANAGER", "ADMIN"]).optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -280,6 +280,7 @@ export default function OrganizationSetupPage() {
             columns={empColumns}
             data={employeeList}
             searchable
+            loading={loading}
             searchPlaceholder="Search employees..."
             searchKeys={["name", "email", "department", "role"]}
             pagination

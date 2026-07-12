@@ -258,7 +258,18 @@ export default function BookingsPage() {
         <div className="card p-6 lg:col-span-2">
           <h3 className="font-headline-md text-headline-md mb-4">Recent Activity</h3>
           <div className="space-y-3">
-            {bookingList.slice(0, 5).map((b) => (
+            {loading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={`skeleton-${i}`} className="flex items-center gap-4 p-3 rounded-lg border border-outline-variant/30 animate-pulse">
+                  <div className="w-10 h-10 rounded-lg bg-surface-container-high" />
+                  <div className="flex-1">
+                    <div className="h-4 bg-surface-container-high rounded w-1/2 mb-2" />
+                    <div className="h-3 bg-surface-container-high rounded w-1/3" />
+                  </div>
+                  <div className="h-6 bg-surface-container-high rounded w-16" />
+                </div>
+              ))
+            ) : bookingList.slice(0, 5).map((b) => (
               <div key={b.id} className="flex items-center gap-4 p-3 rounded-lg border border-outline-variant hover:border-primary/20 transition-colors">
                 <div className="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface-variant">
                   {resourceIcons[b.resourceIcon] || <CalendarCheck className="w-5 h-5" />}
