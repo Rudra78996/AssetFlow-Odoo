@@ -27,7 +27,7 @@ export const activityRepository = {
     const [items, total] = await Promise.all([
       prisma.activityLog.findMany({
         where,
-        include: { user: { select: { name: true, role: true } } },
+        include: { user: { select: { name: true, role: true, email: true } } },
         orderBy: { createdAt: "desc" },
         skip,
         take,

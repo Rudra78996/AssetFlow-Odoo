@@ -12,7 +12,7 @@ interface TopbarProps {
 
 export function Topbar({ onMenuClick }: TopbarProps) {
   const router = useRouter();
-  const { user, notifications, unreadCount, markAllRead, markNotificationRead, setUser } = useApp();
+  const { user, notifications, unreadCount, markAllRead, markNotificationRead, setUser, addToast } = useApp();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -36,6 +36,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   if (!user) return null;
   const roleLabel = user.role === "admin" ? "Super Administrator" : user.role === "manager" ? "Manager" : "Employee";
 
@@ -47,12 +57,15 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <div className="relative max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
+        <div className="relative max-w-md flex-1 group" title="Search coming soon">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline opacity-50" />
           <input
             type="text"
-            placeholder="Search assets, people, departments..."
-            className="w-full bg-surface-container-low border border-outline-variant rounded-md pl-9 pr-4 py-2 text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface transition-all"
+            disabled
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search coming soon..."
+            className="w-full bg-surface-container-low/50 border border-outline-variant/60 rounded-md pl-9 pr-4 py-2 text-body-md text-on-surface/50 placeholder:text-outline/50 cursor-not-allowed"
           />
         </div>
       </div>

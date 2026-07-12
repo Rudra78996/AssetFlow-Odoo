@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { DataTable, type Column } from "@/components/DataTable";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Modal } from "@/components/Modal";
 import { Tabs } from "@/components/Tabs";
 import { useApp } from "@/contexts/AppContext";
-import { assets as initialAssets } from "@/lib/mockData";
 import type { Asset } from "@/lib/types";
 import { cn, generateAssetTag, formatCurrency } from "@/lib/utils";
 import {
@@ -33,17 +33,167 @@ const conditionColors: Record<string, string> = {
 
 export default function AssetsPage() {
   const { addToast } = useApp();
-  const [assetList, setAssetList] = useState<Asset[]>(initialAssets);
+  const router = useRouter();
+  const [assetList, setAssetList] = useState<Asset[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showRegister, setShowRegister] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [drawerTab, setDrawerTab] = useState("allocation");
   const [form, setForm] = useState({
-    name: "", category: "Computing", serialNumber: "", acquisitionDate: "",
+    name: "", category: "", serialNumber: "", acquisitionDate: "",
     acquisitionCost: "", condition: "Excellent", location: "", shared: false, bookable: false,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleRegister = () => {
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        const catRes = await fetch("/api/categories", { credentials: "include" });
+        const catData = await catRes.json();
+        if (catRes.ok && catData.success) {
+          setCategories(catData.data);
+          if (catData.data.length > 0) {
+            setForm((prev) => ({ ...prev, category: catData.data[0].id }));
+          }
+        }
+        const assetsRes = await fetch("/api/assets", { credentials: "include" });
+        const assetsData = await assetsRes.json();
+        if (assetsRes.ok && assetsData.success) {
+          setAssetList(assetsData.data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const handleRowClick = async (row: Asset) => {
+    setSelectedAsset(row as any);
+    setDrawerTab("allocation");
+    try {
+      const res = await fetch(`/api/assets/${row.id}`, { credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSelectedAsset(data.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  // Esc key handler for Drawer
+  useEffect(() => {
+    if (!selectedAsset) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedAsset(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedAsset]);
+
+  // Focus trap, autofocus, and restore focus on drawer close
+  useEffect(() => {
+    if (selectedAsset) {
+      previousActiveElement.current = document.activeElement as HTMLElement;
+
+      const focusable = Array.from(
+        drawerRef.current?.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        ) || []
+      ) as HTMLElement[];
+
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      }
+
+      const handleTabKey = (e: KeyboardEvent) => {
+        if (e.key !== "Tab") return;
+
+        const currentFocusable = Array.from(
+          drawerRef.current?.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          ) || []
+        ) as HTMLElement[];
+
+        if (currentFocusable.length === 0) {
+          e.preventDefault();
+          return;
+        }
+
+        const first = currentFocusable[0];
+        const last = currentFocusable[currentFocusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      };
+
+      window.addEventListener("keydown", handleTabKey);
+      return () => {
+        window.removeEventListener("keydown", handleTabKey);
+        if (previousActiveElement.current) {
+          previousActiveElement.current.focus();
+        }
+      };
+    }
+  }, [selectedAsset]);
+
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const validateAndSetFile = (file: File) => {
+    const validTypes = ["image/jpeg", "image/png", "application/pdf"];
+    if (!validTypes.includes(file.type)) {
+      addToast({ message: "Invalid file type. Only JPG, PNG, and PDF are allowed.", type: "error" });
+      return;
+    }
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      addToast({ message: "File exceeds 10MB limit.", type: "error" });
+      return;
+    }
+    setUploadedFile(file);
+    addToast({ message: `File "${file.name}" uploaded successfully`, type: "success" });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      validateAndSetFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      validateAndSetFile(file);
+    }
+  };
+
+  const handleRegister = async () => {
     const e: Record<string, string> = {};
     if (!form.name) e.name = "Asset name is required";
     if (!form.serialNumber) e.serialNumber = "Serial number is required";
@@ -51,27 +201,53 @@ export default function AssetsPage() {
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
-    const tag = generateAssetTag(assetList.map(a => a.tag));
-    const newAsset: Asset = {
-      id: `a${Date.now()}`,
-      tag,
-      name: form.name,
-      category: form.category,
-      serialNumber: form.serialNumber,
-      acquisitionDate: form.acquisitionDate || new Date().toISOString().split("T")[0],
-      acquisitionCost: parseInt(form.acquisitionCost) || 0,
-      condition: form.condition as Asset["condition"],
-      location: form.location,
-      status: "Available",
-      shared: form.shared,
-      bookable: form.bookable,
-      allocationHistory: [{ id: `ah${Date.now()}`, type: "procurement", person: "Procurement Team", department: "Operations", date: new Date().toISOString(), notes: "Initial Procurement" }],
-      maintenanceHistory: [],
-    };
-    setAssetList([newAsset, ...assetList]);
-    setShowRegister(false);
-    setForm({ name: "", category: "Computing", serialNumber: "", acquisitionDate: "", acquisitionCost: "", condition: "Excellent", location: "", shared: false, bookable: false });
-    addToast({ message: `Asset ${tag} registered successfully`, type: "success" });
+    try {
+      const body = {
+        name: form.name,
+        categoryId: form.category,
+        serialNumber: form.serialNumber,
+        acquisitionDate: form.acquisitionDate || new Date().toISOString().split("T")[0],
+        acquisitionCost: parseInt(form.acquisitionCost) || 0,
+        condition: form.condition.toUpperCase(),
+        location: form.location,
+        shared: form.shared,
+        bookable: form.bookable,
+      };
+
+      const res = await fetch("/api/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: `Asset registered successfully`, type: "success" });
+        const assetsRes = await fetch("/api/assets", { credentials: "include" });
+        const assetsData = await assetsRes.json();
+        if (assetsRes.ok && assetsData.success) {
+          setAssetList(assetsData.data);
+        }
+        setShowRegister(false);
+        setForm({
+          name: "",
+          category: categories[0]?.id || "",
+          serialNumber: "",
+          acquisitionDate: "",
+          acquisitionCost: "",
+          condition: "Excellent",
+          location: "",
+          shared: false,
+          bookable: false,
+        });
+        setUploadedFile(null);
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to register asset", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error registering asset", type: "error" });
+    }
   };
 
   const columns: Column<Asset>[] = [
@@ -154,15 +330,16 @@ export default function AssetsPage() {
           searchKeys={["name", "serialNumber", "tag", "category", "location"]}
           pagination
           pageSize={5}
-          onRowClick={(row) => { setSelectedAsset(row); setDrawerTab("allocation"); }}
+          onRowClick={handleRowClick}
+          loading={loading}
         />
       </div>
 
       {/* Detail Drawer */}
       {selectedAsset && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-on-surface/40 backdrop-blur-sm" onClick={() => setSelectedAsset(null)} />
-          <div className="relative w-full max-w-md bg-surface-container-lowest h-full overflow-y-auto shadow-ambient">
+          <div ref={drawerRef} className="relative w-full max-w-md bg-surface-container-lowest h-full overflow-y-auto shadow-ambient">
             <div className="sticky top-0 bg-surface-container-lowest border-b border-outline-variant p-6 z-10">
               <div className="flex items-start justify-between">
                 <div>
@@ -234,10 +411,27 @@ export default function AssetsPage() {
               )}
 
               <div className="flex gap-3 mt-6 pt-6 border-t border-outline-variant">
-                <button className="btn-primary flex-1 justify-center" onClick={() => addToast({ message: "Allocation form opened", type: "info" })}>
+                <button
+                  className="btn-primary flex-1 justify-center"
+                  onClick={() => {
+                    setSelectedAsset(null);
+                    router.push(`/allocations?assetId=${selectedAsset.id}`);
+                  }}
+                >
                   Allocate Asset
                 </button>
-                <button className="p-3 border border-outline-variant rounded-md hover:bg-surface-container-low" onClick={() => addToast({ message: "Edit form opened", type: "info" })}>
+                <button
+                  className="p-3 border border-outline-variant rounded-md hover:bg-surface-container-low"
+                  onClick={() => {
+                    // TODO: Implement Edit Modal to capture name, condition, location, serial number.
+                    // Expected API Endpoint: PATCH /api/assets/[id]
+                    // Payload: { name?: string, condition?: AssetCondition, location?: string, serialNumber?: string }
+                    addToast({
+                      message: "Edit modal placeholder. The real API expects PATCH /api/assets/" + selectedAsset.id,
+                      type: "info"
+                    });
+                  }}
+                >
                   <Edit className="w-4 h-4" />
                 </button>
               </div>
@@ -269,8 +463,11 @@ export default function AssetsPage() {
             <div>
               <label className="label-field">Category</label>
               <select className="input-field" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                <option>Computing</option><option>Furniture</option><option>Warehousing</option>
-                <option>Media Equipment</option><option>Peripherals</option><option>Networking</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -313,9 +510,40 @@ export default function AssetsPage() {
           </div>
           <div>
             <label className="label-field">File Upload</label>
-            <div className="border-2 border-dashed border-outline-variant rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer">
-              <p className="text-body-md text-on-surface-variant">Drag and drop or <span className="text-primary font-bold">browse</span></p>
-              <p className="text-[10px] text-outline mt-1">JPG, PNG, PDF (Max 10MB)</p>
+            <div
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-outline-variant rounded-lg p-6 text-center hover:border-primary transition-colors cursor-pointer"
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="hidden"
+              />
+              {uploadedFile ? (
+                <div>
+                  <p className="text-body-md font-bold text-primary">Selected File: {uploadedFile.name}</p>
+                  <p className="text-[11px] text-outline">({(uploadedFile.size / 1024 / 1024).toFixed(2)} MB)</p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setUploadedFile(null);
+                    }}
+                    className="mt-2 text-xs text-error font-bold hover:underline"
+                  >
+                    Remove File
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-body-md text-on-surface-variant">Drag and drop or <span className="text-primary font-bold">browse</span></p>
+                  <p className="text-[10px] text-outline mt-1">JPG, PNG, PDF (Max 10MB)</p>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-lg">

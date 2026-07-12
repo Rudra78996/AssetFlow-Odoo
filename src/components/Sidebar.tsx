@@ -5,7 +5,7 @@ import { useApp } from "@/contexts/AppContext";
 import {
   LayoutDashboard,
   Settings2,
-  Users,
+  Boxes,
   ClipboardCheck,
   CalendarCheck,
   Wrench,
@@ -28,13 +28,13 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
   { label: "Org Setup", href: "/organization-setup", icon: <Settings2 className="w-5 h-5" />, roles: ["admin"] },
-  { label: "Directory", href: "/assets", icon: <Users className="w-5 h-5" /> },
+  { label: "Directory", href: "/assets", icon: <Boxes className="w-5 h-5" /> },
   { label: "Allocations", href: "/allocations", icon: <ClipboardCheck className="w-5 h-5" /> },
   { label: "Bookings", href: "/bookings", icon: <CalendarCheck className="w-5 h-5" /> },
   { label: "Maintenance", href: "/maintenance", icon: <Wrench className="w-5 h-5" /> },
   { label: "Audits", href: "/audits", icon: <ListChecks className="w-5 h-5" /> },
-  { label: "FileWarnings", href: "/reports", icon: <BarChart3 className="w-5 h-5" /> },
-  { label: "Logs", href: "/activity", icon: <History className="w-5 h-5" /> },
+  { label: "Reports", href: "/reports", icon: <BarChart3 className="w-5 h-5" /> },
+  { label: "Activity Log", href: "/activity", icon: <History className="w-5 h-5" /> },
 ];
 
 const bottomItems: NavItem[] = [

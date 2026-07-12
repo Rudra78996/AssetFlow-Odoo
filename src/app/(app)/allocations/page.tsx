@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Stepper, type Step } from "@/components/Stepper";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useApp } from "@/contexts/AppContext";
-import { allocations } from "@/lib/mockData";
 import type { Allocation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -14,10 +13,43 @@ import {
 
 export default function AllocationsPage() {
   const { addToast } = useApp();
-  const [allocList, setAllocList] = useState<Allocation[]>(allocations);
+  const [allocList, setAllocList] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ asset: "", recipient: "", returnDate: "" });
   const [conflict, setConflict] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        const allocRes = await fetch("/api/allocations", { credentials: "include" });
+        const allocData = await allocRes.json();
+        if (allocRes.ok && allocData.success) {
+          setAllocList(allocData.data);
+        }
+
+        const assetsRes = await fetch("/api/assets", { credentials: "include" });
+        const assetsData = await assetsRes.json();
+        if (assetsRes.ok && assetsData.success) {
+          setAssets(assetsData.data);
+        }
+
+        const empRes = await fetch("/api/employees", { credentials: "include" });
+        const empData = await empRes.json();
+        if (empRes.ok && empData.success) {
+          setEmployees(empData.data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
   const transferSteps: Step[] = [
     { label: "Requested", status: "completed", detail: "Today, 10:45 AM" },
@@ -25,43 +57,85 @@ export default function AllocationsPage() {
     { label: "Re-allocated", status: "upcoming", detail: "Clock Approval" },
   ];
 
-  const handleAssetSelect = (assetName: string) => {
-    setForm({ ...form, asset: assetName });
-    // Simulate conflict for certain assets
-    setConflict(assetName === "MacBook Pro M2 Max" || assetName === "Surface Laptop 5");
+  const handleAssetSelect = (assetId: string) => {
+    setForm({ ...form, asset: assetId });
+    const selected = assets.find(a => a.id === assetId);
+    setConflict(selected?.status === "Allocated" || selected?.status === "Under Maintenance");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.asset || !form.recipient) {
       addToast({ message: "Please fill in all required fields", type: "error" });
       return;
     }
-    const newAlloc: Allocation = {
-      id: `al${Date.now()}`,
-      assetId: "a-new",
-      assetName: form.asset,
-      employee: form.recipient,
-      department: "Operations",
-      status: "PENDING",
-      date: new Date().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }),
-      expectedReturn: form.returnDate || undefined,
-    };
-    setAllocList([newAlloc, ...allocList]);
-    setShowForm(false);
-    setForm({ asset: "", recipient: "", returnDate: "" });
-    setConflict(false);
-    addToast({ message: "Allocation request submitted", type: "success" });
+    try {
+      const body = {
+        assetId: form.asset,
+        recipientId: form.recipient,
+        expectedReturn: form.returnDate ? new Date(form.returnDate) : undefined,
+        notes: "Requested via portal",
+      };
+      const res = await fetch("/api/allocations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Allocation request submitted", type: "success" });
+        const listRes = await fetch("/api/allocations", { credentials: "include" });
+        const listData = await listRes.json();
+        if (listRes.ok && listData.success) {
+          setAllocList(listData.data);
+        }
+        setShowForm(false);
+        setForm({ asset: "", recipient: "", returnDate: "" });
+        setConflict(false);
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to submit allocation", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error submitting allocation", type: "error" });
+    }
   };
 
-  const handleMarkReturned = (id: string) => {
-    setAllocList(allocList.map(a => a.id === id ? { ...a, status: "RETURNED" } : a));
-    addToast({ message: "Asset marked as returned", type: "success" });
+  const handleMarkReturned = async (id: string) => {
+    try {
+      const res = await fetch(`/api/allocations/${id}/return`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Asset marked as returned", type: "success" });
+        const listRes = await fetch("/api/allocations", { credentials: "include" });
+        const listData = await listRes.json();
+        if (listRes.ok && listData.success) {
+          setAllocList(listData.data);
+        }
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to return asset", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error returning asset", type: "error" });
+    }
   };
 
-  const overdueItems = [
-    { id: "od1", name: "Surface Laptop 5", assetId: "MS-L5-002", daysLate: 4, person: "Marcus Vane", dept: "Wrench Dept" },
-    { id: "od2", name: "Wacom Cintiq Pro", assetId: "WCM-24", daysLate: 12, person: "Sarah Jenkins", dept: "Creative Arts" },
-  ];
+  const overdueItems = allocList
+    .filter((a) => a.status === "OVERDUE")
+    .map((item) => {
+      const expected = item.expectedReturn ? new Date(item.expectedReturn).getTime() : Date.now();
+      const days = Math.max(1, Math.ceil((Date.now() - expected) / (1000 * 60 * 60 * 24)));
+      return {
+        id: item.id,
+        name: item.assetName,
+        assetId: item.assetId,
+        daysLate: days,
+        person: item.employee,
+        dept: item.department,
+      };
+    });
 
   return (
     <div className="p-6 md:p-8 space-y-6">
@@ -73,7 +147,7 @@ export default function AllocationsPage() {
         </div>
         <div className="flex items-center gap-3">
           <button className="btn-secondary" onClick={() => addToast({ message: "Report exported", type: "success" })}>
-            <Download className="w-4 h-4" /> Export FileWarning
+            <Download className="w-4 h-4" /> Export Report
           </button>
           <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
             <Plus className="w-4 h-4" /> New Allocation
@@ -93,15 +167,19 @@ export default function AllocationsPage() {
               <label className="label-field">Select Asset</label>
               <select className="input-field" value={form.asset} onChange={(e) => handleAssetSelect(e.target.value)}>
                 <option value="">Choose an asset...</option>
-                <option>MacBook Pro M2 Max</option>
-                <option>Dell UltraSharp U2723QE</option>
-                <option>Surface Laptop 5</option>
-                <option>Herman Miller Aeron</option>
+                {assets.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.tag})</option>
+                ))}
               </select>
             </div>
             <div>
               <label className="label-field">Target Recipient</label>
-              <input className="input-field" value={form.recipient} onChange={(e) => setForm({ ...form, recipient: e.target.value })} placeholder="Employee or Department" />
+              <select className="input-field" value={form.recipient} onChange={(e) => setForm({ ...form, recipient: e.target.value })}>
+                <option value="">Choose a recipient...</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>{emp.name} ({emp.department})</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label-field">Expected Return Date</label>
@@ -186,7 +264,7 @@ export default function AllocationsPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-full bg-secondary-container flex items-center justify-center text-secondary text-[10px] font-bold">
-                        {alloc.employee.split(" ").map(n => n[0]).join("")}
+                        {alloc.employee.split(" ").map((n: string) => n[0]).join("")}
                       </div>
                       <span className="text-body-md">{alloc.employee}</span>
                     </div>

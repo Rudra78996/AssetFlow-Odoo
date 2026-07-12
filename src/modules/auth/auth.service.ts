@@ -55,7 +55,7 @@ export const authService = {
       name,
       email: input.email,
       passwordHash: await hashPassword(input.password),
-      role: "EMPLOYEE",
+      role: input.role ?? "EMPLOYEE",
       departmentId: dept?.id ?? null,
     });
 
@@ -75,14 +75,26 @@ export const authService = {
     if (!user || !user.isActive || !(await verifyPassword(input.password, user.passwordHash))) {
       throw new UnauthorizedError("Invalid email or password");
     }
-    const tokens = await issueTokens(user);
+
+    // If role is provided in login request, change the user's role
+    let finalUser = user;
+    if (input.role && input.role !== user.role) {
+      const { prisma } = await import("@/lib/prisma");
+      finalUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { role: input.role },
+        include: { department: true }
+      });
+    }
+
+    const tokens = await issueTokens(finalUser);
     await logActivity({
-      userId: user.id,
+      userId: finalUser.id,
       action: "auth.login",
       objectType: "User",
-      objectId: user.id,
+      objectId: finalUser.id,
     });
-    return { user: publicUser(user), tokens };
+    return { user: publicUser(finalUser), tokens };
   },
 
   // Rotating refresh with reuse detection: the presented token must match the
@@ -116,5 +128,16 @@ export const authService = {
     const user = await authRepository.findById(userId);
     if (!user) throw new UnauthorizedError();
     return publicUser(user);
+  },
+
+  async changeRole(userId: string, newRole: any) {
+    const { prisma } = await import("@/lib/prisma");
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { role: newRole },
+      include: { department: true }
+    });
+    const tokens = await issueTokens(user);
+    return { user: publicUser(user), tokens };
   },
 };

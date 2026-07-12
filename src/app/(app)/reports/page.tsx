@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/contexts/AppContext";
-import { reportsKPIs, utilizationTrendData, deptAllocationData, assetStatusBreakdown, performanceAuditData } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 import {
   Gauge, Timer, DollarSign, ListChecks, TrendingUp,
@@ -17,9 +16,62 @@ const kpiIcons: Record<string, React.ReactNode> = {
   fact_check: <ListChecks className="w-5 h-5" />,
 };
 
-export default function FileWarningsPage() {
+export default function ReportsPage() {
   const { addToast } = useApp();
   const [timeRange, setTimeRange] = useState("Last 30 Days");
+  const [kpiList, setKpiList] = useState<any[]>([]);
+  const [trendList, setTrendList] = useState<any[]>([]);
+  const [deptList, setDeptList] = useState<any[]>([]);
+  const [statusList, setStatusList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchReport = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/reports?range=30&idleDays=30", { credentials: "include" });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          const summary = data.data;
+          setKpiList([
+            { label: "Utilization Rate", value: `${summary.kpis.averageUtilization}%`, icon: "speed", trend: "+3.2%", color: "text-available" },
+            { label: "Idle Assets", value: `${summary.kpis.idleAssetCount} Units`, icon: "hourglass_empty", trend: "-5.0%", color: "text-available" },
+            { label: "Operational Cost", value: `$${summary.kpis.operationalCost.toLocaleString()}`, icon: "payments", trend: "+12.4%", color: "text-error" },
+            { label: "Compliance Score", value: "98.8%", icon: "fact_check", trend: "+0.4%", color: "text-available" },
+          ]);
+          setTrendList(summary.utilizationTrend || []);
+          setDeptList(summary.deptAllocation || []);
+          setStatusList(summary.statusBreakdown || []);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReport();
+  }, []);
+
+  const handleExportCSV = async () => {
+    try {
+      const res = await fetch("/api/reports?range=30&idleDays=30", { credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(data.data, null, 2))}`;
+        const downloadAnchor = document.createElement("a");
+        downloadAnchor.setAttribute("href", jsonString);
+        downloadAnchor.setAttribute("download", `AssetFlow_Report_Q3_${new Date().toISOString().split("T")[0]}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        addToast({ message: "Report exported successfully", type: "success" });
+      } else {
+        addToast({ message: "Failed to export report", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error exporting report", type: "error" });
+    }
+  };
 
   // Generate booking heatmap data (7 days x 24 hours)
   const heatmapData = Array.from({ length: 7 }, (_, day) =>
@@ -44,27 +96,26 @@ export default function FileWarningsPage() {
     <div className="p-6 md:p-8 space-y-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs font-bold uppercase">
-        <span>BarChart3</span>
+        <span>Reports</span>
         <span className="text-outline">›</span>
         <span className="text-primary">Enterprise Performance</span>
       </div>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-headline-lg font-headline-lg text-on-surface">FileWarnings & Insights</h1>
+        <h1 className="text-headline-lg font-headline-lg text-on-surface">Reports &amp; Insights</h1>
         <div className="flex items-center gap-3">
           <button className="btn-secondary" onClick={() => addToast({ message: "Date range selector opened", type: "info" })}>
             <CalendarDays className="w-4 h-4" /> {timeRange}
           </button>
-          <button className="btn-secondary" onClick={() => addToast({ message: "Report exported", type: "success" })}>
-            <Download className="w-4 h-4" /> Export FileWarning
+          <button className="btn-secondary" onClick={handleExportCSV}>
+            <Download className="w-4 h-4" /> Export Report
           </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {reportsKPIs.map((kpi) => (
+        {kpiList.map((kpi) => (
           <div key={kpi.label} className="card p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface-variant">
@@ -101,21 +152,25 @@ export default function FileWarningsPage() {
             </div>
           </div>
           <div className="flex items-end justify-between gap-2 h-48 pt-4">
-            {utilizationTrendData.map((d) => (
-              <div key={d.day} className="flex-1 flex flex-col items-center gap-2">
-                <div className="w-full flex items-end h-full">
-                  <div
-                    className="w-full bg-primary/70 rounded-t-md transition-all hover:bg-primary relative group"
-                    style={{ height: `${d.value}%` }}
-                  >
-                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-on-surface opacity-0 group-hover:opacity-100 transition-opacity">
-                      {d.value}%
-                    </span>
+            {trendList.map((d, idx) => {
+              const maxVal = Math.max(...trendList.map(t => t.value)) || 1;
+              const heightPct = Math.min(100, Math.round((d.value / maxVal) * 100));
+              return (
+                <div key={`${d.day}-${idx}`} className="flex-1 flex flex-col items-center gap-2">
+                  <div className="w-full flex items-end h-full">
+                    <div
+                      className="w-full bg-primary/70 rounded-t-md transition-all hover:bg-primary relative group"
+                      style={{ height: `${heightPct}%` }}
+                    >
+                      <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-on-surface opacity-0 group-hover:opacity-100 transition-opacity">
+                        {d.value}
+                      </span>
+                    </div>
                   </div>
+                  <span className="text-[10px] text-outline font-mono">{d.day}</span>
                 </div>
-                <span className="text-[10px] text-outline font-mono">{d.day}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -126,24 +181,32 @@ export default function FileWarningsPage() {
             <button className="text-outline hover:text-on-surface"><MoreVertical className="w-5 h-5" /></button>
           </div>
           <div className="space-y-4">
-            {assetStatusBreakdown.map((s) => (
-              <div key={s.label}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-on-surface font-body-md">{s.label}</span>
-                  <span className={cn("font-bold", s.color)}>{s.percentage}%</span>
+            {statusList.map((s) => {
+              const statusColorMap: Record<string, string> = {
+                "Available": "text-available",
+                "Allocated": "text-primary",
+                "Under Maintenance": "text-error",
+                "Retired": "text-outline",
+              };
+              const color = statusColorMap[s.label] || "text-primary";
+              return (
+                <div key={s.label}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-on-surface font-body-md">{s.label}</span>
+                    <span className={cn("font-bold", color)}>{s.percentage}%</span>
+                  </div>
+                  <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full", color.replace("text-", "bg-"))}
+                      style={{ width: `${s.percentage}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-on-surface-variant text-body-md">{s.count} Assets</span>
+                  </div>
                 </div>
-                <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
-                  <div
-                    className={cn("h-full rounded-full", s.color.replace("text-", "bg-"))}
-                    style={{ width: `${s.percentage}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className="text-on-surface-variant text-body-md">{s.detail}</span>
-                  <span className="text-outline text-label-md font-mono">{s.hours}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -159,17 +222,20 @@ export default function FileWarningsPage() {
             </button>
           </div>
           <div className="space-y-4">
-            {deptAllocationData.map((d) => (
-              <div key={d.dept}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-on-surface font-body-md">{d.dept}</span>
-                  <span className="font-mono text-on-surface-variant">{d.units} Units</span>
+            {deptList.map((d) => {
+              const maxUnits = Math.max(...deptList.map(item => item.units)) || 1;
+              return (
+                <div key={d.dept}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-on-surface font-body-md">{d.dept}</span>
+                    <span className="font-mono text-on-surface-variant">{d.units} Units</span>
+                  </div>
+                  <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
+                    <div className="h-full bg-secondary rounded-full" style={{ width: `${(d.units / maxUnits) * 100}%` }} />
+                  </div>
                 </div>
-                <div className="h-3 bg-surface-container-high rounded-full overflow-hidden">
-                  <div className="h-full bg-secondary rounded-full" style={{ width: `${(d.units / 1240) * 100}%` }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -243,23 +309,11 @@ export default function FileWarningsPage() {
             </tr>
           </thead>
           <tbody>
-            {performanceAuditData.map((row) => (
-              <tr key={row.id} className="border-b border-outline-variant/50 hover:bg-surface-container-low">
-                <td className="px-6 py-4 font-mono text-body-md">{row.id}</td>
-                <td className="px-6 py-4 text-on-surface">{row.name}</td>
-                <td className="px-6 py-4 text-center">{row.uptime}</td>
-                <td className="px-6 py-4 text-center">{row.mttr}</td>
-                <td className="px-6 py-4 text-right">{row.cost}</td>
-                <td className="px-6 py-4">
-                  <span className={cn("inline-flex items-center px-2 py-1 rounded text-xs font-bold",
-                    row.status === "Optimal" ? "bg-available/10 text-available" :
-                    row.status === "AlertTriangle" ? "bg-reserved/10 text-reserved" :
-                    "bg-error/10 text-error")}>
-                    {row.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
+            <tr>
+              <td colSpan={6} className="px-6 py-8 text-center text-on-surface-variant">
+                Performance audit data available via API endpoint
+              </td>
+            </tr>
           </tbody>
         </table>
         <div className="flex items-center justify-between p-4 border-t border-outline-variant">

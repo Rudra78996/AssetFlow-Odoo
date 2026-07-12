@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useApp } from "@/contexts/AppContext";
-import { bookings as initialBookings } from "@/lib/mockData";
 import type { Booking } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -29,48 +28,94 @@ const timelineSlots = [
 
 export default function BookingsPage() {
   const { addToast } = useApp();
-  const [bookingList, setBookingList] = useState<Booking[]>(initialBookings);
+  const [bookingList, setBookingList] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"Today" | "Week" | "Month">("Today");
   const [form, setForm] = useState({ resource: "", startTime: "", endTime: "", note: "" });
   const [overlap, setOverlap] = useState(false);
 
-  const handleBooking = () => {
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        const bookingsRes = await fetch("/api/bookings", { credentials: "include" });
+        const bookingsData = await bookingsRes.json();
+        if (bookingsRes.ok && bookingsData.success) {
+          setBookingList(bookingsData.data);
+        }
+
+        const assetsRes = await fetch("/api/assets", { credentials: "include" });
+        const assetsData = await assetsRes.json();
+        if (assetsRes.ok && assetsData.success) {
+          setAssets(assetsData.data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const handleBooking = async () => {
     if (!form.resource || !form.startTime || !form.endTime) {
       addToast({ message: "Please fill in all required fields", type: "error" });
       return;
     }
-    // Simulate overlap detection
-    const start = parseInt(form.startTime.replace(":", ""));
-    const end = parseInt(form.endTime.replace(":", ""));
-    const hasOverlap = bookingList.some(b => {
-      const bs = parseInt(b.startTime.replace(":", ""));
-      const be = parseInt(b.endTime.replace(":", ""));
-      return start < be && end > bs && b.date === "2023-10-24";
-    });
-    if (hasOverlap) {
-      setOverlap(true);
-      return;
+    try {
+      const body = {
+        assetId: form.resource,
+        purpose: form.note || "Booking",
+        date: new Date().toISOString().split("T")[0],
+        startTime: form.startTime,
+        endTime: form.endTime,
+      };
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Booking confirmed successfully", type: "success" });
+        const bookingsRes = await fetch("/api/bookings", { credentials: "include" });
+        const bookingsData = await bookingsRes.json();
+        if (bookingsRes.ok && bookingsData.success) {
+          setBookingList(bookingsData.data);
+        }
+        setForm({ resource: "", startTime: "", endTime: "", note: "" });
+        setOverlap(false);
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to book resource", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error creating booking", type: "error" });
     }
-    const newBooking: Booking = {
-      id: `b${Date.now()}`,
-      resourceName: form.resource,
-      resourceIcon: "meeting_room",
-      bookedBy: "Alex Rivera",
-      purpose: form.note || "Booking",
-      startTime: form.startTime,
-      endTime: form.endTime,
-      status: "Upcoming",
-      date: "2023-10-24",
-    };
-    setBookingList([newBooking, ...bookingList]);
-    setForm({ resource: "", startTime: "", endTime: "", note: "" });
-    setOverlap(false);
-    addToast({ message: "Booking confirmed successfully", type: "success" });
   };
 
-  const handleCancel = (id: string) => {
-    setBookingList(bookingList.map(b => b.id === id ? { ...b, status: "Cancelled" } : b));
-    addToast({ message: "Booking cancelled", type: "info" });
+  const handleCancel = async (id: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${id}/cancel`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Booking cancelled successfully", type: "success" });
+        const bookingsRes = await fetch("/api/bookings", { credentials: "include" });
+        const bookingsData = await bookingsRes.json();
+        if (bookingsRes.ok && bookingsData.success) {
+          setBookingList(bookingsData.data);
+        }
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to cancel booking", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error cancelling booking", type: "error" });
+    }
   };
 
   const handleReschedule = (id: string) => {
@@ -78,9 +123,9 @@ export default function BookingsPage() {
   };
 
   const stats = [
-    { label: "Total Bookings", value: "124", icon: <TrendingUp className="w-4 h-4" />, color: "text-primary" },
-    { label: "Active Now", value: "8", icon: <Timer className="w-4 h-4" />, color: "text-tertiary" },
-    { label: "Clock Approval", value: "3", icon: <Clock className="w-4 h-4" />, color: "text-on-surface" },
+    { label: "Total Bookings", value: bookingList.length.toString(), icon: <TrendingUp className="w-4 h-4" />, color: "text-primary" },
+    { label: "Active Now", value: bookingList.filter(b => b.status === "ONGOING" || b.status === "Ongoing").length.toString(), icon: <Timer className="w-4 h-4" />, color: "text-tertiary" },
+    { label: "Clock Approval", value: bookingList.filter(b => b.status === "UPCOMING" || b.status === "Upcoming").length.toString(), icon: <Clock className="w-4 h-4" />, color: "text-on-surface" },
   ];
 
   return (
@@ -161,11 +206,9 @@ export default function BookingsPage() {
               <label className="text-xs font-bold block mb-1">Resource</label>
               <select className="input-field" value={form.resource} onChange={(e) => setForm({ ...form, resource: e.target.value })}>
                 <option value="">Select resource...</option>
-                <option>Meeting Room A</option>
-                <option>Meeting Room B</option>
-                <option>Conf. Room A</option>
-                <option>EV Sprinter 04</option>
-                <option>Microscope X</option>
+                {assets.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.tag})</option>
+                ))}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -188,7 +231,7 @@ export default function BookingsPage() {
                 <XCircle className="w-5 h-5 text-error flex-shrink-0" />
                 <div>
                   <p className="text-on-error-container text-xs font-bold">Booking Rejected: Conflict Detected</p>
-                  <p className="text-[11px] text-on-error-container mt-1">This slot overlaps with "Logistics Overlap" by User J. Miller (13:30 - 15:45). Please choose a different time.</p>
+                  <p className="text-[11px] text-on-error-container mt-1">This slot overlaps with &quot;Logistics Overlap&quot; by User J. Miller (13:30 - 15:45). Please choose a different time.</p>
                 </div>
               </div>
             )}

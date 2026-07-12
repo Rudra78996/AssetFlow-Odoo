@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/contexts/AppContext";
-import { activityLogs, notifications, activityStats } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 import {
   Download, RefreshCw, AlertTriangle, ListChecks, ArrowRightLeft, UserPlus,
@@ -18,17 +17,36 @@ const notifIcons: Record<string, { icon: React.ReactNode; color: string; bg: str
 };
 
 export default function ActivityPage() {
-  const { addToast, markAllRead, dismissNotification } = useApp();
+  const { addToast, markAllRead, dismissNotification, notifications } = useApp();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "Success" | "Failed">("all");
+  const [logsList, setLogsList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredLogs = activityLogs.filter(log => {
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/activity", { credentials: "include" });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setLogsList(data.data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLogs();
+  }, []);
+
+  const filteredLogs = logsList.filter(log => {
     const matchesSearch = !search ||
-      log.user.toLowerCase().includes(search.toLowerCase()) ||
+      (log.userEmail && log.userEmail.toLowerCase().includes(search.toLowerCase())) ||
       log.action.toLowerCase().includes(search.toLowerCase()) ||
       log.objectId.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "all" || log.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
   return (
@@ -132,27 +150,27 @@ export default function ActivityPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-secondary text-[10px] font-bold">
-                        {log.user.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                        {log.userEmail ? log.userEmail.slice(0, 2).toUpperCase() : "NA"}
                       </div>
                       <div>
-                        <p className="font-bold text-sm">{log.user}</p>
-                        <p className="text-xs text-on-surface-variant">{log.userRole}</p>
+                        <p className="font-bold text-sm">{log.userEmail ? log.userEmail.split("@")[0] : "Unknown"}</p>
+                        <p className="text-xs text-on-surface-variant">{log.userEmail || "No email"}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={cn("text-sm font-medium", log.status === "Failed" ? "text-error" : "text-on-surface")}>
-                      {log.action}
+                    <span className="text-sm font-medium text-on-surface">
+                      {log.action.split(".").map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(" ")}
                     </span>
                   </td>
                   <td className="px-6 py-4 font-mono text-sm">{log.objectId}</td>
                   <td className="px-6 py-4">
-                    <p className="text-sm text-on-surface-variant">{log.timestamp.split(" ").slice(0, 3).join(" ")}</p>
-                    <p className="text-xs text-outline">{log.timestamp.split(" ").slice(3).join(" ")}</p>
+                    <p className="text-sm text-on-surface-variant">{new Date(log.createdAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-outline">{new Date(log.createdAt).toLocaleTimeString()}</p>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={cn("text-xs font-bold", log.status === "Success" ? "text-on-surface" : "text-error")}>
-                      {log.status}
+                    <span className="text-xs font-bold text-on-surface">
+                      Success
                     </span>
                   </td>
                 </tr>
@@ -174,22 +192,18 @@ export default function ActivityPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {activityStats.map((stat) => (
-          <div key={stat.label} className="card p-5">
-            <p className="text-on-surface-variant text-xs font-bold">{stat.label}</p>
-            <h4 className="text-2xl font-bold mt-1">{stat.value}</h4>
-            <div className="flex items-center gap-1 mt-2">
-              {stat.trendDirection === "up" ? (
-                <TrendingUp className="w-4 h-4 text-available" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-error" />
-              )}
-              <span className={cn("text-xs font-bold", stat.trendDirection === "up" ? "text-available" : "text-error")}>
-                {stat.trend}
-              </span>
-            </div>
-          </div>
-        ))}
+        <div className="card p-5">
+          <p className="text-on-surface-variant text-xs font-bold">Total Activities</p>
+          <h4 className="text-2xl font-bold mt-1">{logsList.length}</h4>
+        </div>
+        <div className="card p-5">
+          <p className="text-on-surface-variant text-xs font-bold">This Week</p>
+          <h4 className="text-2xl font-bold mt-1">{logsList.filter(l => new Date(l.createdAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length}</h4>
+        </div>
+        <div className="card p-5">
+          <p className="text-on-surface-variant text-xs font-bold">Success Rate</p>
+          <h4 className="text-2xl font-bold mt-1">{logsList.length > 0 ? Math.round((logsList.filter(l => l.status === "Success").length / logsList.length) * 100) : 100}%</h4>
+        </div>
       </div>
     </div>
   );

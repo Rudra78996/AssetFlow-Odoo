@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Stepper, type Step } from "@/components/Stepper";
 import { Modal } from "@/components/Modal";
 import { useApp } from "@/contexts/AppContext";
-import { maintenanceRequests, maintenanceHistory } from "@/lib/mockData";
 import type { MaintenanceRequest, MaintenancePriority } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -12,10 +11,13 @@ import {
   CheckCircle2, XCircle, Wrench,
 } from "lucide-react";
 
-const priorityColors: Record<MaintenancePriority, string> = {
+const priorityColors: Record<string, string> = {
   High: "bg-error/10 text-error",
   Medium: "bg-primary/10 text-primary",
   Low: "bg-secondary-container text-on-secondary-container",
+  HIGH: "bg-error/10 text-error",
+  MEDIUM: "bg-primary/10 text-primary",
+  LOW: "bg-secondary-container text-on-secondary-container",
 };
 
 const statusSteps: Record<string, Step[]> = {
@@ -58,42 +60,124 @@ const workflowColumns = [
 
 export default function MaintenancePage() {
   const { addToast } = useApp();
-  const [requestList, setRequestList] = useState<MaintenanceRequest[]>(maintenanceRequests);
+  const [requestList, setRequestList] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ asset: "", priority: "Medium" as MaintenancePriority, issue: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        const activeRes = await fetch("/api/maintenance", { credentials: "include" });
+        const activeData = await activeRes.json();
+        if (activeRes.ok && activeData.success) {
+          setRequestList(activeData.data);
+        }
+
+        const historyRes = await fetch("/api/maintenance/history", { credentials: "include" });
+        const historyData = await historyRes.json();
+        if (historyRes.ok && historyData.success) {
+          setHistoryList(historyData.data);
+        }
+
+        const assetsRes = await fetch("/api/assets", { credentials: "include" });
+        const assetsData = await assetsRes.json();
+        if (assetsRes.ok && assetsData.success) {
+          setAssets(assetsData.data);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const handleSubmit = async () => {
     const e: Record<string, string> = {};
     if (!form.asset) e.asset = "Please select an asset";
     if (!form.issue) e.issue = "Please describe the issue";
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
-    const newReq: MaintenanceRequest = {
-      id: `mr${Date.now()}`,
-      assetId: "a-new",
-      assetName: form.asset,
-      issue: form.issue,
-      priority: form.priority,
-      status: "Clock",
-      date: "Just now",
-      description: form.issue,
-    };
-    setRequestList([newReq, ...requestList]);
-    setShowForm(false);
-    setForm({ asset: "", priority: "Medium", issue: "" });
-    addToast({ message: "Maintenance request submitted", type: "success" });
+    try {
+      const body = {
+        assetId: form.asset,
+        issue: form.issue,
+        description: form.issue,
+        priority: form.priority.toUpperCase(),
+      };
+      const res = await fetch("/api/maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Maintenance request submitted successfully", type: "success" });
+        const activeRes = await fetch("/api/maintenance", { credentials: "include" });
+        const activeData = await activeRes.json();
+        if (activeRes.ok && activeData.success) {
+          setRequestList(activeData.data);
+        }
+        setShowForm(false);
+        setForm({ asset: "", priority: "Medium", issue: "" });
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to submit request", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error submitting request", type: "error" });
+    }
   };
 
-  const handleApprove = (id: string) => {
-    setRequestList(requestList.map(r => r.id === id ? { ...r, status: "Approved" } : r));
-    addToast({ message: "Maintenance request approved", type: "success" });
+  const handleApprove = async (id: string) => {
+    try {
+      const res = await fetch(`/api/maintenance/${id}/approve`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Maintenance request approved", type: "success" });
+        const activeRes = await fetch("/api/maintenance", { credentials: "include" });
+        const activeData = await activeRes.json();
+        if (activeRes.ok && activeData.success) {
+          setRequestList(activeData.data);
+        }
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to approve request", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error approving request", type: "error" });
+    }
   };
 
-  const handleReject = (id: string) => {
-    setRequestList(requestList.map(r => r.id === id ? { ...r, status: "Rejected" } : r));
-    addToast({ message: "Maintenance request rejected", type: "info" });
+  const handleReject = async (id: string) => {
+    try {
+      const res = await fetch(`/api/maintenance/${id}/reject`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Maintenance request rejected", type: "info" });
+        const activeRes = await fetch("/api/maintenance", { credentials: "include" });
+        const activeData = await activeRes.json();
+        if (activeRes.ok && activeData.success) {
+          setRequestList(activeData.data);
+        }
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to reject request", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error rejecting request", type: "error" });
+    }
   };
 
   return (
@@ -187,9 +271,9 @@ export default function MaintenancePage() {
               </tr>
             </thead>
             <tbody>
-              {maintenanceHistory.map((h) => (
-                <tr key={h.id} className="border-b border-outline-variant/50 hover:bg-surface-container-low">
-                  <td className="px-4 py-3 font-mono text-body-md">{h.assetId}</td>
+              {historyList.map((h) => (
+                <tr key={h.id} className="border-b border-outline-variant/30 hover:bg-surface-container-low/50">
+                  <td className="px-4 py-4 font-mono text-body-md">{h.assetTag}</td>
                   <td className="px-4 py-3 text-body-md">{h.issue}</td>
                   <td className="px-4 py-3 text-body-md">{h.technician}</td>
                   <td className="px-4 py-3 text-body-md">{h.date}</td>
@@ -253,11 +337,9 @@ export default function MaintenancePage() {
             <label className="label-field">Select Asset</label>
             <select className="input-field" value={form.asset} onChange={(e) => setForm({ ...form, asset: e.target.value })}>
               <option value="">Choose an asset...</option>
-              <option>MacBook Pro M2 Max</option>
-              <option>Server Rack B2-4</option>
-              <option>Industrial CNC Unit</option>
-              <option>HVAC System Central</option>
-              <option>Zebra ZT411 Printer</option>
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.tag})</option>
+              ))}
             </select>
             {errors.asset && <p className="text-label-md text-error mt-1">{errors.asset}</p>}
           </div>

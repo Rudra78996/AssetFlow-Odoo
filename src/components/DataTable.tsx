@@ -12,6 +12,12 @@ export interface Column<T> {
   sortable?: boolean;
 }
 
+export interface FilterDropdown {
+  key: string;
+  label: string;
+  options: { value: string; label: string }[];
+}
+
 interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
@@ -20,10 +26,12 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   searchKeys?: (keyof T)[];
   filters?: React.ReactNode;
+  filterDropdowns?: FilterDropdown[];
   pagination?: boolean;
   pageSize?: number;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  loading?: boolean;
 }
 
 export function DataTable<T extends { id: string }>({
@@ -34,15 +42,18 @@ export function DataTable<T extends { id: string }>({
   searchPlaceholder = "Search...",
   searchKeys,
   filters,
+  filterDropdowns,
   pagination = false,
   pageSize = 10,
   emptyMessage = "No data available",
   onRowClick,
+  loading = false,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string>>({});
 
   let filtered = data;
   if (searchable && search) {
@@ -51,6 +62,16 @@ export function DataTable<T extends { id: string }>({
       return keys.some((key) =>
         String(row[key] || "").toLowerCase().includes(search.toLowerCase())
       );
+    });
+  }
+
+  if (filterDropdowns) {
+    filtered = filtered.filter((row) => {
+      return Object.entries(selectedFilters).every(([key, val]) => {
+        if (!val) return true;
+        const rowValue = String((row as Record<string, unknown>)[key] || "");
+        return rowValue.toLowerCase() === val.toLowerCase();
+      });
     });
   }
 
@@ -80,22 +101,81 @@ export function DataTable<T extends { id: string }>({
     }
   };
 
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      if (currentPage > 3) {
+        pages.push("...");
+      }
+
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      if (currentPage <= 3) {
+        for (let i = 2; i <= 4; i++) {
+          pages.push(i);
+        }
+      } else if (currentPage >= totalPages - 2) {
+        for (let i = totalPages - 3; i <= totalPages - 1; i++) {
+          pages.push(i);
+        }
+      } else {
+        for (let i = start; i <= end; i++) {
+          pages.push(i);
+        }
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push("...");
+      }
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
   return (
     <div className="flex flex-col">
-      {(searchable || filters) && (
-        <div className="flex items-center gap-3 p-4 border-b border-outline-variant">
+      {(searchable || filters || filterDropdowns) && (
+        <div className="flex flex-wrap items-center gap-3 p-4 border-b border-outline-variant">
           {searchable && (
-            <div className="relative flex-1 max-w-md">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-outline" />
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder={searchPlaceholder}
                 className="input-field pl-9"
               />
             </div>
           )}
+          {filterDropdowns &&
+            filterDropdowns.map((filter) => (
+              <select
+                key={filter.key}
+                value={selectedFilters[filter.key] || ""}
+                onChange={(e) => {
+                  setSelectedFilters((prev) => ({ ...prev, [filter.key]: e.target.value }));
+                  setCurrentPage(1);
+                }}
+                className="bg-surface-container-lowest border border-outline-variant rounded-md px-3 py-2.5 text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-all cursor-pointer"
+              >
+                <option value="">All {filter.label}</option>
+                {filter.options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ))}
           {filters}
         </div>
       )}
@@ -125,7 +205,17 @@ export function DataTable<T extends { id: string }>({
             </tr>
           </thead>
           <tbody>
-            {paginated.length === 0 ? (
+            {loading ? (
+              Array.from({ length: pageSize }).map((_, rowIndex) => (
+                <tr key={`skeleton-row-${rowIndex}`} className="border-b border-outline-variant/30 animate-pulse">
+                  {columns.map((col) => (
+                    <td key={`skeleton-cell-${col.key}`} className={densityClass}>
+                      <div className="h-4 bg-surface-container-high rounded w-2/3" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="text-center py-12 text-on-surface-variant">
                   {emptyMessage}
@@ -166,18 +256,27 @@ export function DataTable<T extends { id: string }>({
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={cn(
-                  "w-8 h-8 rounded-md text-body-md",
-                  page === currentPage ? "bg-primary text-on-primary" : "hover:bg-surface-container-low"
-                )}
-              >
-                {page}
-              </button>
-            ))}
+            {getPageNumbers().map((page, idx) => {
+              if (page === "...") {
+                return (
+                  <span key={`ellipsis-${idx}`} className="px-2 text-outline select-none">
+                    &hellip;
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={`page-${page}`}
+                  onClick={() => setCurrentPage(page as number)}
+                  className={cn(
+                    "w-8 h-8 rounded-md text-body-md transition-colors",
+                    page === currentPage ? "bg-primary text-on-primary font-semibold" : "hover:bg-surface-container-low text-on-surface-variant"
+                  )}
+                >
+                  {page}
+                </button>
+              );
+            })}
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}

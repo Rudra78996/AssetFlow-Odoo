@@ -33,12 +33,14 @@ function toDto(row: Awaited<ReturnType<typeof activityRepository.list>>["items"]
   return {
     id: row.id,
     user: row.user?.name ?? "System",
+    userEmail: row.user?.email ?? null,
     userRole: row.user ? RoleLabel[row.user.role] : "system",
     action: row.action,
     objectType: row.objectType,
     objectId: row.objectId,
     timestamp: row.createdAt.toISOString(),
     status: row.status,
+    createdAt: row.createdAt.toISOString(),
   };
 }
 

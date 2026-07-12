@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs } from "@/components/Tabs";
 import { Modal } from "@/components/Modal";
 import { DataTable, type Column } from "@/components/DataTable";
 import { useApp } from "@/contexts/AppContext";
-import { departments, assetCategories, employees } from "@/lib/mockData";
 import type { Department, Employee } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -16,8 +15,10 @@ import {
 export default function OrganizationSetupPage() {
   const { addToast } = useApp();
   const [activeTab, setActiveTab] = useState("departments");
-  const [deptList, setDeptList] = useState<Department[]>(departments);
-  const [employeeList, setEmployeeList] = useState<Employee[]>(employees);
+  const [deptList, setDeptList] = useState<any[]>([]);
+  const [categoryList, setCategoryList] = useState<any[]>([]);
+  const [employeeList, setEmployeeList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAddDept, setShowAddDept] = useState(false);
   const [showPromote, setShowPromote] = useState(false);
   const [promoteTarget, setPromoteTarget] = useState<Employee | null>(null);
@@ -29,28 +30,85 @@ export default function OrganizationSetupPage() {
     { id: "employees", label: "Employee Directory", icon: <UserCircle className="w-4 h-4" /> },
   ];
 
-  const handleAddDept = () => {
-    if (!newDept.name) { addToast({ message: "Department name is required", type: "error" }); return; }
-    const dept: Department = {
-      id: `d${Date.now()}`,
-      name: newDept.name,
-      hierarchy: newDept.hierarchy || "Core → New",
-      deptHead: newDept.deptHead || "Unassigned",
-      staffCount: 0,
-      status: "Active",
-    };
-    setDeptList([...deptList, dept]);
-    setNewDept({ name: "", hierarchy: "", deptHead: "" });
-    setShowAddDept(false);
-    addToast({ message: "Department created successfully", type: "success" });
+  const initData = async () => {
+    try {
+      setLoading(true);
+      const deptRes = await fetch("/api/departments", { credentials: "include" });
+      const deptData = await deptRes.json();
+      if (deptRes.ok && deptData.success) {
+        setDeptList(deptData.data);
+      }
+
+      const catRes = await fetch("/api/categories", { credentials: "include" });
+      const catData = await catRes.json();
+      if (catRes.ok && catData.success) {
+        setCategoryList(catData.data);
+      }
+
+      const empRes = await fetch("/api/employees", { credentials: "include" });
+      const empData = await empRes.json();
+      if (empRes.ok && empData.success) {
+        setEmployeeList(empData.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePromote = () => {
+  useEffect(() => {
+    initData();
+  }, []);
+
+  const handleAddDept = async () => {
+    if (!newDept.name) { addToast({ message: "Department name is required", type: "error" }); return; }
+    try {
+      const body = {
+        name: newDept.name,
+        hierarchy: newDept.hierarchy || "Core → New",
+        deptHead: newDept.deptHead || "Unassigned",
+        status: "Active" as const,
+      };
+      const res = await fetch("/api/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Department created successfully", type: "success" });
+        setNewDept({ name: "", hierarchy: "", deptHead: "" });
+        setShowAddDept(false);
+        initData();
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to create department", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error creating department", type: "error" });
+    }
+  };
+
+  const handlePromote = async () => {
     if (!promoteTarget) return;
-    setEmployeeList(employeeList.map(e => e.id === promoteTarget.id ? { ...e, role: "Department Manager" } : e));
-    setShowPromote(false);
-    setPromoteTarget(null);
-    addToast({ message: `${promoteTarget.name} promoted to Department Manager`, type: "success" });
+    try {
+      const res = await fetch(`/api/employees/${promoteTarget.id}/promote`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: `${promoteTarget.name} promoted to Manager`, type: "success" });
+        setShowPromote(false);
+        setPromoteTarget(null);
+        initData();
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to promote employee", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error promoting employee", type: "error" });
+    }
   };
 
   const deptColumns: Column<Department>[] = [
@@ -146,7 +204,7 @@ export default function OrganizationSetupPage() {
         <div className="card p-4">
           <p className="text-on-surface-variant font-label-md uppercase text-label-md">Total Assets</p>
           <p className="text-3xl font-bold mt-1">1,284</p>
-          <p className="text-xs text-outline mt-1">Across {assetCategories.length} categories</p>
+          <p className="text-xs text-outline mt-1">Across {categoryList.length} categories</p>
         </div>
         <div className="card p-4">
           <p className="text-on-surface-variant font-label-md uppercase text-label-md">System Health</p>
@@ -180,7 +238,7 @@ export default function OrganizationSetupPage() {
                 </button>
               </div>
               <div className="space-y-3">
-                {assetCategories.map((cat) => (
+                {categoryList.map((cat) => (
                   <div key={cat.id} className="flex items-center gap-4 p-4 rounded-lg border border-outline-variant hover:border-primary/20 transition-colors cursor-pointer">
                     <div className="w-10 h-10 rounded-lg bg-primary/5 flex items-center justify-center text-primary">
                       <Tag className="w-5 h-5" />
@@ -199,7 +257,7 @@ export default function OrganizationSetupPage() {
             <div>
               <h4 className="font-headline-md text-headline-md mb-4">Field Configurator: Workstations</h4>
               <div className="space-y-2">
-                {assetCategories[0].customFields.map((field) => (
+                {categoryList[0]?.customFields && categoryList[0].customFields.map((field: any) => (
                   <div key={field.id} className="flex items-center gap-3 p-3 rounded-lg border border-outline-variant">
                     <GripVertical className="w-4 h-4 text-outline cursor-grab" />
                     <span className="text-body-md font-medium flex-1">{field.name}</span>

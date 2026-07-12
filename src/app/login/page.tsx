@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppProvider } from "@/contexts/AppContext";
 import { useApp } from "@/contexts/AppContext";
+import { cn } from "@/lib/utils";
 import { Package2, Mail, Lock, ArrowRight, ShieldCheck, BadgeCheck, Cloud, User, Info, Eye, EyeOff } from "lucide-react";
 
 function LoginForm() {
@@ -18,6 +19,7 @@ function LoginForm() {
     password: "",
     firstName: "",
     lastName: "",
+    role: "EMPLOYEE" as "EMPLOYEE" | "MANAGER" | "ADMIN",
   });
 
   const validate = () => {
@@ -43,8 +45,8 @@ function LoginForm() {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
       const body =
         mode === "login"
-          ? { email: form.email, password: form.password }
-          : { firstName: form.firstName, lastName: form.lastName, email: form.email, password: form.password };
+          ? { email: form.email, password: form.password, role: form.role }
+          : { firstName: form.firstName, lastName: form.lastName, email: form.email, password: form.password, role: form.role };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -205,6 +207,26 @@ function LoginForm() {
                   </div>
                   {errors.password && <p className="text-label-md text-error mt-1">{errors.password}</p>}
                 </div>
+                <div>
+                  <label className="label-field mb-2">Login as Role</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["EMPLOYEE", "MANAGER", "ADMIN"] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setForm({ ...form, role })}
+                        className={cn(
+                          "px-3 py-2 rounded-md border-2 text-label-md font-bold transition-colors",
+                          form.role === role
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-outline-variant text-on-surface-variant hover:border-primary/30"
+                        )}
+                      >
+                        {role}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" className="rounded border-outline-variant" />
                   <span className="text-body-md text-on-surface-variant select-none">Stay signed in for 30 days</span>
@@ -304,11 +326,30 @@ function LoginForm() {
                   </div>
                   {errors.password && <p className="text-label-md text-error mt-1">{errors.password}</p>}
                 </div>
+                <div>
+                  <label className="label-field mb-2">Create account as Role</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["EMPLOYEE", "MANAGER", "ADMIN"] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setForm({ ...form, role })}
+                        className={cn(
+                          "px-3 py-2 rounded-md border-2 text-label-md font-bold transition-colors",
+                          form.role === role
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-outline-variant text-on-surface-variant hover:border-primary/30"
+                        )}
+                      >
+                        {role}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex items-start gap-2 p-3 bg-secondary-container/30 rounded-md">
                   <Info className="w-4 h-4 text-secondary flex-shrink-0 mt-0.5" />
                   <p className="text-label-md text-secondary leading-normal">
-                    Registration creates an <span className="font-bold">Employee</span> account. Admin privileges must
-                    be granted by your IT Director.
+                    Registration creates an account with the selected role. Admin privileges should be used carefully.
                   </p>
                 </div>
                 <button

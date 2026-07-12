@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "@/components/Modal";
 import { useApp } from "@/contexts/AppContext";
-import { auditAssets as initialAssets, auditDiscrepancies, currentAuditCycle } from "@/lib/mockData";
 import type { AuditAsset } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -14,15 +13,118 @@ import {
 
 export default function AuditsPage() {
   const { addToast } = useApp();
-  const [assets, setAssets] = useState<AuditAsset[]>(initialAssets);
+  const [assets, setAssets] = useState<AuditAsset[]>([]);
+  const [cycle, setCycle] = useState<any>(null);
+  const [discrepancies, setDiscrepancies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"PENDING" | "COMPLETED">("PENDING");
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [auditForm, setAuditForm] = useState({ scope: "", startDate: "", endDate: "", auditors: [] as string[] });
 
-  const handleQuickAction = (id: string, status: AuditAsset["status"]) => {
-    setAssets(assets.map(a => a.id === id ? { ...a, status } : a));
-    addToast({ message: `Asset marked as ${status}`, type: status === "verified" ? "success" : status === "missing" || status === "damaged" ? "error" : "info" });
+  const fetchCycleData = async () => {
+    try {
+      setLoading(true);
+      const listRes = await fetch("/api/audits/cycles", { credentials: "include" });
+      const listData = await listRes.json();
+      if (listRes.ok && listData.success && listData.data.length > 0) {
+        const active = listData.data[0];
+        const detailRes = await fetch(`/api/audits/cycles/${active.id}`, { credentials: "include" });
+        const detailData = await detailRes.json();
+        if (detailRes.ok && detailData.success) {
+          setCycle(detailData.data);
+          setAssets(detailData.data.assets || []);
+        }
+
+        const discRes = await fetch(`/api/audits/cycles/${active.id}/discrepancies`, { credentials: "include" });
+        const discData = await discRes.json();
+        if (discRes.ok && discData.success) {
+          setDiscrepancies(discData.data);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCycleData();
+  }, []);
+
+  const handleQuickAction = async (id: string, status: AuditAsset["status"]) => {
+    if (!cycle) return;
+    try {
+      const res = await fetch(`/api/audits/cycles/${cycle.id}/assets/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: status.toUpperCase() }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: `Asset marked as ${status}`, type: "success" });
+        fetchCycleData();
+      } else {
+        addToast({ message: data.error?.message ?? `Failed to update status`, type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error updating status", type: "error" });
+    }
+  };
+
+  const handleCloseCycle = async () => {
+    if (!cycle) return;
+    try {
+      const res = await fetch(`/api/audits/cycles/${cycle.id}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: true }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "Audit cycle closed successfully", type: "success" });
+        setShowCloseModal(false);
+        fetchCycleData();
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to close cycle", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error closing cycle", type: "error" });
+    }
+  };
+
+  const handleCreateCycle = async () => {
+    if (!auditForm.scope || !auditForm.startDate || !auditForm.endDate) {
+      addToast({ message: "Please fill in all required fields", type: "error" });
+      return;
+    }
+    try {
+      const body = {
+        scope: auditForm.scope,
+        startDate: new Date(auditForm.startDate),
+        endDate: new Date(auditForm.endDate),
+        auditorIds: [],
+      };
+      const res = await fetch("/api/audits/cycles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        addToast({ message: "New audit cycle created successfully", type: "success" });
+        setAuditForm({ scope: "", startDate: "", endDate: "", auditors: [] });
+        fetchCycleData();
+      } else {
+        addToast({ message: data.error?.message ?? "Failed to create cycle", type: "error" });
+      }
+    } catch (err) {
+      addToast({ message: "Network error creating cycle", type: "error" });
+    }
   };
 
   const filteredAssets = filter === "PENDING"
@@ -31,7 +133,7 @@ export default function AuditsPage() {
 
   const verifiedCount = assets.filter(a => a.status === "verified").length;
   const issueCount = assets.filter(a => a.status === "missing" || a.status === "damaged").length;
-  const progress = Math.round((assets.filter(a => a.status !== "pending").length / assets.length) * 100);
+  const progress = assets.length === 0 ? 0 : Math.round((assets.filter(a => a.status !== "pending").length / assets.length) * 100);
 
   const actionButtons = (asset: AuditAsset) => {
     if (asset.status !== "pending") {
@@ -98,45 +200,45 @@ export default function AuditsPage() {
             <Gauge className="w-5 h-5" />
             <h3 className="font-headline-md text-headline-md">Cycle Scope</h3>
           </div>
-          <div className="space-y-4">
-            <div>
-              <label className="text-[11px] font-bold uppercase text-on-surface-variant">Department / Location</label>
-              <p className="text-body-md mt-1">{currentAuditCycle.scope}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-[11px] font-bold uppercase text-on-surface-variant">Start Date</label>
-                <p className="text-body-md mt-1">{currentAuditCycle.startDate}</p>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold uppercase text-on-surface-variant">End Date</label>
-                <p className="text-body-md mt-1">{currentAuditCycle.endDate}</p>
-              </div>
-            </div>
-            <div>
-              <label className="text-[11px] font-bold uppercase text-on-surface-variant">Auditor Selection</label>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {currentAuditCycle.auditors.map((a) => (
-                  <span key={a} className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary-container/50 rounded-full text-body-md">
-                    {a}
-                    <button className="text-outline hover:text-error"><X className="w-3 h-3" /></button>
-                  </span>
-                ))}
-                <button className="w-8 h-8 rounded-full border border-outline-variant flex items-center justify-center hover:bg-surface-container-low" onClick={() => addToast({ message: "Add auditor form opened", type: "info" })}>
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-body-md">Progress</span>
-                <span className="font-bold">{progress}%</span>
-              </div>
-              <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          </div>
+            {cycle ? (
+              <>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-on-surface-variant">Department / Location</label>
+                  <p className="text-body-md mt-1">{cycle.scope}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[11px] font-bold uppercase text-on-surface-variant">Start Date</label>
+                    <p className="text-body-md mt-1">{cycle.startDate}</p>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold uppercase text-on-surface-variant">End Date</label>
+                    <p className="text-body-md mt-1">{cycle.endDate}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase text-on-surface-variant">Auditors</label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {cycle.auditors && cycle.auditors.map((a: string) => (
+                      <span key={a} className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary-container/50 rounded-full text-body-md">
+                        {a}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-body-md">Progress</span>
+                    <span className="font-bold">{progress}%</span>
+                  </div>
+                  <div className="h-2 bg-surface-container-high rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-outline">Loading cycle scope details...</p>
+            )}
         </div>
 
         {/* Discrepancies */}
@@ -147,19 +249,23 @@ export default function AuditsPage() {
             <span className="bg-error-container text-on-error-container px-2 py-0.5 rounded text-label-md">12 FLAGS</span>
           </div>
           <div className="space-y-3">
-            {auditDiscrepancies.map((d) => (
-              <div key={d.id} className="flex items-start gap-3 p-3 rounded-lg border border-outline-variant">
-                {d.type === "missing" ? (
-                  <FileWarning className="w-5 h-5 text-error flex-shrink-0 mt-0.5" />
-                ) : (
-                  <Construction className="w-5 h-5 text-tertiary flex-shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <p className="font-label-md text-label-md text-on-surface">{d.assetName}</p>
-                  <p className="text-xs text-on-surface-variant italic mt-0.5">&quot;{d.issue}&quot;</p>
+            {discrepancies.length === 0 ? (
+              <p className="text-xs text-outline text-center py-4">No flags detected</p>
+            ) : (
+              discrepancies.map((d) => (
+                <div key={d.id} className="flex items-start gap-3 p-3 rounded-lg border border-outline-variant">
+                  {d.status === "missing" ? (
+                    <FileWarning className="w-5 h-5 text-error flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <Construction className="w-5 h-5 text-tertiary flex-shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-label-md text-label-md text-on-surface">{d.name || d.assetName}</p>
+                    <p className="text-xs text-on-surface-variant italic mt-0.5">&quot;{d.note || d.status}&quot;</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
           <button className="w-full mt-4 py-2 border border-outline-variant rounded-md text-body-md hover:bg-surface-container-low" onClick={() => addToast({ message: "Loading full discrepancy list", type: "info" })}>
             View Full Discrepancy List
@@ -187,11 +293,7 @@ export default function AuditsPage() {
                 <input type="date" className="input-field mt-1" value={auditForm.endDate} onChange={(e) => setAuditForm({ ...auditForm, endDate: e.target.value })} />
               </div>
             </div>
-            <button className="btn-primary w-full justify-center" onClick={() => {
-              if (!auditForm.scope) { addToast({ message: "Scope is required", type: "error" }); return; }
-              addToast({ message: "New audit cycle created", type: "success" });
-              setAuditForm({ scope: "", startDate: "", endDate: "", auditors: [] });
-            }}>
+            <button className="btn-primary w-full justify-center" onClick={handleCreateCycle}>
               Create Audit Cycle
             </button>
           </div>
@@ -264,7 +366,7 @@ export default function AuditsPage() {
           </div>
           <h3 className="font-headline-lg text-headline-lg text-on-surface mb-2">Finalize Audit Cycle?</h3>
           <p className="text-on-surface-variant font-body-md text-body-md mb-6">
-            You are about to close Audit Cycle <span className="font-bold text-on-surface">#{currentAuditCycle.id}</span>. This action will finalize all verified asset states and trigger a discrepancy report.
+            You are about to close Audit Cycle <span className="font-bold text-on-surface">#{cycle?.id}</span>. This action will finalize all verified asset states and trigger a discrepancy report.
           </p>
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="p-3 bg-surface-container-low rounded-lg">
@@ -277,18 +379,18 @@ export default function AuditsPage() {
             </div>
             <div className="p-3 bg-surface-container-low rounded-lg">
               <p className="text-on-surface uppercase tracking-widest text-xs">TOTAL SCORE</p>
-              <p className="text-primary font-bold text-xl mt-1">{currentAuditCycle.complianceGauge}%</p>
+              <p className="text-primary font-bold text-xl mt-1">{cycle?.complianceGauge}%</p>
             </div>
           </div>
           <div className="flex gap-3">
             <button className="flex-1 py-3 border border-outline-variant rounded-xl text-on-surface hover:bg-surface-container-low" onClick={() => setShowCloseModal(false)}>
-              XCircle
+              Cancel
             </button>
             <button
               className="flex-1 py-3 bg-primary text-white rounded-xl hover:bg-primary/90"
-              onClick={() => { setShowCloseModal(false); addToast({ message: "Audit cycle finalized. Report generated.", type: "success" }); }}
+              onClick={handleCloseCycle}
             >
-              Finalize & FileWarning
+              Finalize &amp; Report
             </button>
           </div>
         </div>
