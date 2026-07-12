@@ -1,10 +1,35 @@
 # AssetFlow Backend
 
+**🚀 Live Application:** [https://asset-flow-odoo-rho.vercel.app](https://asset-flow-odoo-rho.vercel.app)
+
 Production-grade REST backend for **AssetFlow**, an enterprise asset/resource
 management system. Built with **Next.js 14 (App Router, Node runtime) + MongoDB +
 Prisma + TypeScript (strict) + Zod**, JWT cookie auth, layered architecture, and a
 consistent response envelope. The existing Next.js + Tailwind frontend can consume
 this API by swapping its mock-data imports for `fetch` calls.
+
+---
+
+## What is AssetFlow? (How the Application Works)
+
+AssetFlow is a centralized system for tracking the lifecycle, assignment, and health of company assets. It ensures that every piece of equipment is accounted for, maintained, and properly distributed.
+
+### Core Workflows
+
+1. **Asset Registry**: The core directory of all company physical items (laptops, monitors, vehicles). Each asset has a unique tag (`AF-0001`), a status (`AVAILABLE`, `IN_USE`, `MAINTENANCE`, `RETIRED`), and belongs to a specific Category and Department.
+2. **Allocations (Long-term)**: When an employee needs an asset for everyday work (e.g., a laptop), an **Allocation** is created. 
+   - Approving an allocation automatically updates the asset's status to `IN_USE`. 
+   - Returning the asset sets it back to `AVAILABLE`.
+   - A background worker (`worker:overdue`) constantly monitors expected return dates and flags overdue items.
+3. **Bookings (Short-term)**: For shared resources (like a projector or a company car), employees create **Bookings** for specific dates. The system strictly prevents double-booking through server-side overlap checks.
+4. **Maintenance**: If an asset breaks, a **Maintenance Request** is opened. 
+   - This transitions the asset to `MAINTENANCE` status, preventing it from being allocated or booked. 
+   - Once the repair is resolved, the asset is returned to the available pool.
+5. **Audits**: Managers can open **Audit Cycles** to verify the physical presence and condition of assets in their department. 
+   - Employees or managers scan/verify the assets.
+   - If an asset is marked as missing or damaged during an audit, it automatically creates a **Discrepancy** record for investigation.
+
+This system guarantees that the **Asset Status** is always a single source of truth, automatically kept in sync by Transactions when Allocations or Maintenance requests are updated.
 
 ---
 
@@ -110,6 +135,42 @@ npm run dev
 | Manage depts/categories/employees, promote | ❌ | ❌ | ✅ |
 | Create/close audit cycle | ❌ | ✅ | ✅ |
 | View activity log | ❌ | ✅ (own dept) | ✅ (all) |
+
+---
+
+## Extending the Application (How to Add Code Safely)
+
+If you need to add new features, endpoints, or business logic without "hammering" or breaking the existing codebase, strictly follow the layered architecture. **Do not add logic directly into route handlers.** 
+
+Follow these steps to safely add new code:
+
+**1. Define or update your Data Schema (`src/modules/<domain>/*.schema.ts`)**
+- Use **Zod** to define the exact shape of expected inputs (body, query, params).
+- This is the *only* place where request validation should happen.
+
+**2. Update the Repository (`src/modules/<domain>/*.repository.ts`)**
+- This is the **only** layer allowed to import and interact with Prisma (`src/lib/prisma`).
+- Create a new method here if you need a new database query (e.g., `findCustomAssets`, `updateSomething`).
+- Return raw data or mapped data from the database. **No business logic or error throwing here.**
+
+**3. Implement Business Logic in the Service (`src/modules/<domain>/*.service.ts`)**
+- Call the repository methods from here.
+- Add your core business rules, calculations, and side-effects (like calling `logActivity` or `notifyUser`).
+- Throw `AppError` (from `src/lib/errors`) if business rules are violated (e.g., `throw new AppError('Asset already assigned', 'CONFLICT', 409)`).
+
+**4. Expose the Route Handler (`src/app/api/<domain>/route.ts`)**
+- Wrap your Next.js route with `defineRoute` (from `src/lib/apiResponse.ts` or `src/middleware/compose.ts`).
+- Route handlers should be extremely thin: 
+  1. Call Zod to parse the request.
+  2. Pass the parsed data to the Service.
+  3. Return the result.
+- **Never write Prisma queries or business `if/else` logic in the route handler.**
+
+### Golden Rules to Avoid Breaking Things:
+- **Don't bypass Zod:** If you add a new API parameter, ensure it's validated.
+- **Don't skip the Service layer:** Even for simple fetches, go through the service. This ensures that if we add caching or logging later, it's centralized.
+- **Transactions:** If your new code needs to update multiple tables at once, use Prisma transactions inside the repository layer (or use the `withTxRetry` wrapper if it's highly concurrent).
+- **Responses:** Never use `NextResponse.json(...)` directly. The `defineRoute` wrapper will automatically format your return value into the `{ success: true, data: ... }` envelope and handle thrown errors.
 
 ---
 
