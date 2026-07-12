@@ -82,3 +82,87 @@ desktop.ini
 .pyprof
 nosetests.xml
 pylintreport.txt
+# Dependency directories
+node_modules/
+jspm_packages/
+web_modules/
+.pnp
+.pnp.*
+
+# Yarn directory
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js build output and cache
+.next/
+out/
+
+# Production and build outputs
+build/
+dist/
+/public/hot
+
+# Testing and coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files and credentials (secrets)
+.env
+.env.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+*.pem
+*.key
+*.cert
+
+# Database/SQLite files (exclude environment databases, SQLite databases, etc.)
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Operating System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDEs and Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# TypeScript
+*.tsbuildinfo
+
+# Debugging and profiling
+.v8optgrind
+.pyprof
+nosetests.xml
+pylintreport.txt
