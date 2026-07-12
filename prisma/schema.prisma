@@ -1,0 +1,306 @@
+// AssetFlow — Prisma schema (MongoDB connector).
+// Design notes (see README "Design Decisions"):
+//  - Allocation/Maintenance "history" the frontend shows is DERIVED from the
+//    Allocation / MaintenanceRequest collections, never stored embedded on Asset.
+//  - AuditDiscrepancy is a computed view over AuditAsset (status MISSING|DAMAGED).
+//  - Department.staffCount and AuditCycle stats are COMPUTED on read, never stored.
+//  - Asset.tag is generated server-side via the atomic Counter document (race-safe).
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum AssetStatus {
+  AVAILABLE
+  ALLOCATED
+  RESERVED
+  UNDER_MAINTENANCE
+  LOST
+  RETIRED
+  DISPOSED
+}
+
+enum AssetCondition {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+}
+
+enum AllocationStatus {
+  PENDING
+  ACTIVE
+  OVERDUE
+  RETURNED
+  REJECTED
+}
+
+enum BookingStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MaintenanceStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  TECHNICIAN_ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum AuditAssetStatus {
+  PENDING
+  VERIFIED
+  MISSING
+  DAMAGED
+}
+
+enum AuditCycleStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMERIC
+  DATE
+  BOOLEAN
+}
+
+// Atomic counter for race-safe sequential IDs (e.g. asset tags: AF-0001, AF-0002...).
+// Incremented with findOneAndUpdate + $inc so concurrent registrations never collide.
+model Counter {
+  id  String @id @map("_id") // e.g. "asset_tag"
+  seq Int    @default(0)
+}
+
+model User {
+  id               String  @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  email            String  @unique
+  passwordHash     String
+  role             Role    @default(EMPLOYEE)
+  departmentId     String? @db.ObjectId
+  department       Department? @relation(fields: [departmentId], references: [id])
+  jobTitle         String? // free-text role/title shown in the Employees view (e.g. "Accountant")
+  avatarUrl        String?
+  isActive         Boolean @default(true)
+  refreshTokenHash String? // rotate + hash refresh tokens, never store raw
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  allocationsAsRecipient    Allocation[]         @relation("AllocationRecipient")
+  bookings                  Booking[]
+  maintenanceRequestsRaised MaintenanceRequest[] @relation("RequestedBy")
+  activityLogs              ActivityLog[]
+  notifications             Notification[]
+  auditCyclesAsAuditor      AuditCycle[]         @relation("Auditors", fields: [auditingCycleIds], references: [id])
+  auditingCycleIds          String[]             @db.ObjectId
+
+  @@index([departmentId])
+  @@index([role])
+}
+
+model Department {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  name       String  @unique
+  hierarchy  String
+  deptHead   String? // display name of the department head (mirrors frontend mock shape)
+  status     String  @default("Active") // Active | Inactive
+  parentId   String? @db.ObjectId
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users User[]
+
+  @@index([parentId])
+  // staffCount is NOT stored — computed via count(User where departmentId = X).
+}
+
+model AssetCategory {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  name         String        @unique
+  icon         String?
+  customFields CustomField[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  assets Asset[]
+}
+
+type CustomField {
+  name     String
+  type     CustomFieldType
+  required Boolean @default(false)
+}
+
+model Asset {
+  id                String         @id @default(auto()) @map("_id") @db.ObjectId
+  tag               String         @unique // AF-0001, server-generated via Counter
+  name              String
+  categoryId        String         @db.ObjectId
+  category          AssetCategory  @relation(fields: [categoryId], references: [id])
+  serialNumber      String         @unique
+  acquisitionDate   DateTime
+  acquisitionCost   Float
+  condition         AssetCondition @default(GOOD)
+  location          String
+  status            AssetStatus    @default(AVAILABLE)
+  shared            Boolean        @default(false)
+  bookable          Boolean        @default(false)
+  customFieldValues Json? // values keyed by AssetCategory.customFields[].name
+  deletedAt         DateTime? // soft-delete — historical records still reference this asset
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  allocations         Allocation[]
+  bookings            Booking[]
+  maintenanceRequests MaintenanceRequest[]
+  auditAssetEntries   AuditAsset[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([deletedAt])
+}
+
+model Allocation {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  assetId        String           @db.ObjectId
+  asset          Asset            @relation(fields: [assetId], references: [id])
+  recipientId    String           @db.ObjectId
+  recipient      User             @relation("AllocationRecipient", fields: [recipientId], references: [id])
+  departmentId   String?          @db.ObjectId
+  type           String           // "allocated" | "returned" | "procurement"
+  status         AllocationStatus @default(PENDING)
+  requestedAt    DateTime         @default(now())
+  approvedAt     DateTime?
+  returnedAt     DateTime?
+  expectedReturn DateTime?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([assetId, requestedAt])
+  @@index([status])
+  @@index([recipientId])
+}
+
+model Booking {
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  assetId    String        @db.ObjectId
+  asset      Asset         @relation(fields: [assetId], references: [id])
+  bookedById String        @db.ObjectId
+  bookedBy   User          @relation(fields: [bookedById], references: [id])
+  purpose    String
+  date       DateTime      // date component of the booking (time-of-day carried in start/endTime)
+  startTime  String        // "HH:mm"
+  endTime    String        // "HH:mm"
+  status     BookingStatus @default(UPCOMING)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([assetId, date])
+  @@index([status])
+}
+
+model MaintenanceRequest {
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  assetId       String              @db.ObjectId
+  asset         Asset               @relation(fields: [assetId], references: [id])
+  issue         String
+  description   String
+  priority      MaintenancePriority @default(MEDIUM)
+  status        MaintenanceStatus   @default(OPEN)
+  technicianId  String?             @db.ObjectId
+  technician    String? // display name (frontend renders a name, not an id)
+  cost          Float? // operational cost — powers Reports "Operational Cost"
+  requestedById String              @db.ObjectId
+  requestedBy   User                @relation("RequestedBy", fields: [requestedById], references: [id])
+  resolvedAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([assetId])
+  @@index([status])
+  @@index([priority])
+}
+
+model AuditCycle {
+  id         String           @id @default(auto()) @map("_id") @db.ObjectId
+  scope      String
+  startDate  DateTime
+  endDate    DateTime
+  status     AuditCycleStatus @default(ACTIVE)
+  auditorIds String[]         @db.ObjectId
+  auditors   User[]           @relation("Auditors", fields: [auditorIds], references: [id])
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  auditAssets AuditAsset[]
+  // progress, verifiedCount, discrepancyCount, complianceGauge — ALL COMPUTED on read.
+}
+
+model AuditAsset {
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
+  auditCycleId String           @db.ObjectId
+  auditCycle   AuditCycle       @relation(fields: [auditCycleId], references: [id])
+  assetId      String           @db.ObjectId
+  asset        Asset            @relation(fields: [assetId], references: [id])
+  status       AuditAssetStatus @default(PENDING)
+  note         String?
+  verifiedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([auditCycleId, status])
+  @@index([assetId])
+}
+
+model ActivityLog {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String? @db.ObjectId
+  user       User?   @relation(fields: [userId], references: [id])
+  action     String  // dot-namespaced, e.g. "asset.created"
+  objectType String  // "Asset" | "Allocation" | ...
+  objectId   String
+  status     String  // "Success" | "Failed"
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([objectType, objectId])
+}
+
+model Notification {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String  @db.ObjectId
+  user      User    @relation(fields: [userId], references: [id])
+  type      String  // overdue | audit | transfer | assignment | system | maintenance | booking
+  title     String
+  message   String
+  read      Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
