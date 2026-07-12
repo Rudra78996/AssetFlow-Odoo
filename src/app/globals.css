@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background-color: #F7F9FB;
+    color: #191C1E;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-container-lowest border border-outline-variant rounded-xl transition-colors duration-200;
+  }
+  .card-hover {
+    @apply hover:border-primary/20;
+  }
+  .btn-primary {
+    @apply bg-primary text-on-primary rounded-md text-sm px-4 py-2 transition-colors hover:bg-primary/90 inline-flex items-center gap-2;
+  }
+  .btn-secondary {
+    @apply bg-surface-container-lowest border border-outline-variant text-on-surface rounded-md text-sm px-4 py-2 transition-colors hover:bg-surface-container-low inline-flex items-center gap-2;
+  }
+  .btn-ghost {
+    @apply text-on-surface-variant rounded-md text-sm px-3 py-2 transition-colors hover:bg-surface-container-low inline-flex items-center gap-2;
+  }
+  .input-field {
+    @apply w-full bg-surface-container-lowest border border-outline-variant rounded-md px-3 py-2.5 text-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface transition-all;
+  }
+  .label-field {
+    @apply block text-xs font-medium text-on-surface-variant mb-1.5;
+  }
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-2.5 rounded-md transition-colors text-on-surface-variant hover:bg-surface-container-low;
+  }
+  .nav-item-active {
+    @apply bg-primary/5 text-primary border-l-[3px] border-primary;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #C3C6D7;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #737686;
+}
